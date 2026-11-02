@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const db = require('./db');
-const { TABLES, MOODS, REACTIONS } = require('./constants');
+const { TABLES, MOODS, REACTIONS, DRINKS } = require('./constants');
 const { clean, maskBadWords, hasCrisisSignal } = require('./moderation');
 const { requireUser, requireAdmin } = require('./auth');
 const { hit } = require('./ratelimit');
@@ -172,6 +172,20 @@ router.post('/posts/:id/comments', requireUser, (req, res) => {
     realtime.notifyUser(p.user_id, { kind: 'comment', postId: p.id, actor: req.user.nickname });
   }
   res.json({ post: shapePost(q.post.get(p.id), req.user, { full: true }) });
+});
+
+// Mời người kể chuyện một ly nước (chỉ gửi thông báo, không lộ danh tính người kể)
+router.post('/posts/:id/treat', requireUser, (req, res) => {
+  const p = q.post.get(int(req.params.id));
+  const { drink } = req.body || {};
+  if (!p || p.hidden) return res.status(404).json({ error: 'Không tìm thấy tâm sự này.' });
+  if (!DRINKS.includes(drink)) return res.status(400).json({ error: 'Quán không có món này.' });
+  if (p.user_id === req.user.id) return res.status(400).json({ error: 'Tự mời mình thì gọi thẳng ở quầy nhé 😄' });
+  if (!hit(`treat:${req.user.id}`, 20, 10 * 60e3)) return res.status(429).json({ error: 'Bạn hào phóng quá! Nghỉ tay chút rồi mời tiếp nhé.' });
+  if (!hit(`treat:${req.user.id}:${p.id}`, 1, 30 * 60e3)) return res.status(429).json({ error: 'Bạn vừa mời người này rồi, để họ uống từ từ đã.' });
+  q.notify.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, Date.now());
+  realtime.notifyUser(p.user_id, { kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname });
+  res.json({ ok: true });
 });
 
 router.post('/posts/:id/resolve', requireUser, (req, res) => {

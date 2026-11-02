@@ -10,7 +10,9 @@ const TABLES = {
 };
 const MOODS = ['met', 'buon', 'tuc', 'lo', 'chan', 'ap_luc'];
 const REACTIONS = ['dongcam', 'coLen', 'om'];
+// Menu nước quán Cô Tư (khớp public/js/menu.js)
+const DRINKS = ['trada', 'tragung', 'nuocsau', 'caphe', 'daunanh', 'nuocdua', 'trachanh', 'nuocmia'];
 const AVATAR = {
   skin: 4, hairColor: 6, hairStyle: 4, shirt: 8, pants: 4, hat: 3,
 };
-module.exports = { TABLES, MOODS, REACTIONS, AVATAR };
+module.exports = { TABLES, MOODS, REACTIONS, DRINKS, AVATAR };

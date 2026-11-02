@@ -98,6 +98,7 @@ export class Game {
   removePlayer(sid) { this.players.delete(sid); this.bubbles.delete(sid); }
   clearPlayers() { this.players.clear(); this.me = null; }
   say(sid, text) { this.bubbles.set(sid, { text, until: performance.now() + 6000 }); }
+  coTuSay(text) { const n = performance.now(); this.npc.bubble = text; this.npc.until = n + 5000; this.npc.next = n + 15000; }
   emote(sid, e) { this.emotes.push({ sid, icon: EMOTE_ICON[e] || '✨', t0: performance.now() }); }
   setTableCounts(c) { this.tableCounts = c; }
   sparkleTable(id) {

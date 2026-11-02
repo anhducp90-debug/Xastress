@@ -21,6 +21,21 @@ và nhận về sự **đồng cảm, chia sẻ, cổ vũ** từ những ngườ
 **6 bàn = 6 chủ đề:** 💼 Công Việc · 🏠 Gia Đình · 💔 Tình Cảm · 📚 Học Hành · 💸 Cơm Áo Gạo Tiền · 🌧️ Chuyện Đời.
 Mỗi tâm sự mới là một ly trà đá đặt lên bàn.
 
+**🧋 Menu nước quán Cô Tư – mỗi món một cách giải toả stress**
+| Món | Dành cho lúc | Hoạt động |
+|---|---|---|
+| 🧊 Trà đá vỉa hè | Bực mình | Viết hết ra rồi *đổ đi* (không lưu gì) hoặc đặt lên bàn chia sẻ |
+| 🫚 Trà gừng ấm | Lo âu, hồi hộp | 1 phút thở theo vòng tròn: hít 4 – giữ 4 – thở 6 |
+| 🍈 Nước sấu đá | Rối trí | Kéo mình về hiện tại bằng 5 giác quan (5-4-3-2-1) |
+| ☕ Cà phê đen đá | Ngập việc | Ghi mối lo, chia thành 3 việc nhỏ làm được hôm nay |
+| 🥛 Sữa đậu nành nóng | Buồn, tự trách | Lời dịu dàng của Cô Tư + "lọ điều tốt" ghi việc mình đã làm được |
+| 🥥 Nước dừa tươi | Mệt rã rời | 2 phút nghỉ, thả lỏng cơ thể từng bước |
+| 🍋 Trà chanh chém gió | Chán chường | Chuyện phiếm vỉa hè cho vui |
+| 🎋 Nước mía mời bạn | Muốn giúp người khác | Mời một ly nước cho người đang buồn – họ nhận thông báo |
+
+Chọn tâm trạng để Cô Tư gợi ý món. Gọi xong, Cô Tư đáp lời và nhân vật cầm ly nước trên tay cho cả quán thấy.
+Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của người dùng, không gửi lên máy chủ.
+
 **Tâm sự & cổ vũ**
 - Kể chuyện kèm tâm trạng (mệt mỏi, buồn, bực tức, lo âu, chán nản, áp lực), mặc định **ẩn danh hoàn toàn**.
 - Người khác bày tỏ 🫂 Đồng cảm · 💪 Cố lên · ❤️ Thương và gửi lời động viên (có gợi ý câu sẵn).
@@ -59,6 +74,7 @@ public/
   js/scene3d.js   Dựng góc phố 3D: nhà ống, quán trà, cây, cột điện, xe cộ
   js/game3d.js    Engine 3D: camera, ánh sáng ngày/đêm, NPC, nhãn chữ
   js/avatar3d.js  Xem trước nhân vật 3D
+  js/menu.js      Menu nước & các hoạt động giải toả stress
   js/world.js     Bản đồ logic: bàn, va chạm, tìm đường (dùng chung 2D/3D)
   js/game.js, js/sprites.js, js/vnart.js   Bản 2D pixel dự phòng
   js/main.js      Giao diện, API, realtime

@@ -1,6 +1,7 @@
 // Giao diện: đăng nhập, bảng tâm sự, bình luận, hồ sơ, realtime.
 import { Game } from './game.js';
 import { TABLES, tableById } from './world.js';
+import { createMenu, drinkById } from './menu.js';
 import { drawAvatarPreview as drawAvatar2D, AVATAR_OPTIONS, AVATAR_LABELS, PALETTE, HAIR_NAMES, HAT_NAMES } from './sprites.js';
 
 let drawAvatarPreview = drawAvatar2D;
@@ -67,6 +68,13 @@ const SUPPORT_HTML = html`
     </ul>
     <p>Hoặc gọi cho một người bạn tin tưởng ngay lúc này. Quán luôn ở đây, nhưng bạn xứng đáng được giúp đỡ trực tiếp. <br><small>Số điện thoại có thể thay đổi theo thời gian – hãy kiểm tra lại nếu không gọi được.</small></p>
   </div>`;
+
+function notifText(kind, live) {
+  const [k, v] = kind.split(':');
+  if (k === 'comment') return live ? 'vừa gửi lời động viên cho bạn 💌' : 'đã gửi lời động viên 💌';
+  if (k === 'treat') { const d = drinkById[v]; return d ? `đã mời bạn một ly ${d.name.toLowerCase()} ${d.icon}` : 'đã mời bạn một ly nước 🍵'; }
+  return live ? `vừa ${REACTS[v] || 'thả tim'} tâm sự của bạn` : `đã bày tỏ ${REACTS[v] || ''}`;
+}
 
 function ago(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -195,7 +203,8 @@ function setupAuth() {
   };
 }
 
-function enter(user, isNew) {
+async function enter(user, isNew) {
+  await gameReady;
   me = user;
   $('#auth').classList.add('hidden');
   for (const id of ['#hud', '#chatbar', '#help']) $(id).classList.remove('hidden');
@@ -237,12 +246,19 @@ function connect() {
   socket.on('online', (n) => { $('#online').textContent = `${n} người trong quán`; });
   socket.on('chat', (m) => game.say(m.sid, m.text));
   socket.on('emote', (m) => game.emote(m.sid, m.e));
+  socket.on('order', (o) => {
+    const d = drinkById[o.drink];
+    if (!d) return;
+    game.say(o.sid, `${d.icon} Cô ơi, cho ly ${d.name.toLowerCase()}!`);
+    if (game.coTuSay) setTimeout(() => game.coTuSay(`Có ngay ${d.name.toLowerCase()} cho ${o.nickname} đây!`), 1200);
+    if (game.holdDrink) setTimeout(() => game.holdDrink(o.sid, o.drink), 1800);
+  });
   socket.on('sys', (m) => toast(m));
   socket.on('support', () => openSupport());
   socket.on('post:new', (p) => { game.sparkleTable(p.tableId); refreshTables(); });
   socket.on('post:remove', () => refreshTables());
   socket.on('notify', (n) => {
-    const kind = n.kind === 'comment' ? 'vừa gửi lời động viên cho bạn 💌' : `vừa ${REACTS[n.kind.split(':')[1]] || 'thả tim'} tâm sự của bạn`;
+    const kind = notifText(n.kind, true);
     toast(`${n.actor} ${kind}`);
     refreshNotifs();
   });
@@ -448,7 +464,7 @@ async function openPost(id, back) {
   } catch (err) { toast(err.message, true); }
 }
 
-function openWrite(tableId) {
+function openWrite(tableId, prefill = '') {
   openModal(html`
     <h2>✍️ Gọi ly trà, kể chuyện</h2>
     <p class="tag">Viết ra là đã nhẹ đi một nửa. Không ai biết bạn là ai nếu bạn chọn ẩn danh.</p>
@@ -469,6 +485,7 @@ function openWrite(tableId) {
     </form>`, 'write');
   const f = $('#writeForm');
   f.content.oninput = () => { $('#cnt').textContent = [...f.content.value].length; };
+  if (prefill) { f.content.value = prefill; f.content.oninput(); }
   f.onsubmit = async (e) => {
     e.preventDefault();
     $('#writeErr').textContent = '';
@@ -488,7 +505,7 @@ async function openNotifs() {
       <h2>🔔 Thông báo</h2>
       ${items.length ? items.map((n) => html`
         <div class="notif ${n.read ? '' : 'unread'}" data-post="${n.postId}">
-          <b>${n.actor}</b> ${n.kind === 'comment' ? 'đã gửi lời động viên 💌' : `đã bày tỏ ${REACTS[n.kind.split(':')[1]] || ''}`}
+          <b>${n.actor}</b> ${notifText(n.kind, false)}
           <small>“${n.preview}…” · ${ago(n.createdAt)}</small>
         </div>`) : html`<div class="empty"><div class="big">🔕</div>Chưa có thông báo nào.</div>`}`, 'notifs');
     $('#modalBody').onclick = (e) => {
@@ -562,7 +579,8 @@ function openNpc(welcome = false) {
         : 'Gì đó con? Uống ly trà đá cho mát rồi kể cô nghe.'}</div>
     </div>
     <div class="npc-menu">
-      <button class="btn warm" data-npc="write">🍵 Cho con một ly trà đá (kể chuyện)</button>
+      <button class="btn warm" data-npc="menu">🧋 Cô ơi, cho con xem thực đơn</button>
+      <button class="btn" data-npc="write">🍵 Cho con một ly trà đá (kể chuyện)</button>
       <button class="btn" data-npc="comfort">😔 Cô ơi, con mệt quá…</button>
       <button class="btn" data-npc="breathe">🌬️ Thở cùng cô một chút</button>
       <button class="btn" data-npc="feed">📰 Hôm nay quán có chuyện gì?</button>
@@ -576,6 +594,7 @@ function openNpc(welcome = false) {
     const a = b.dataset.npc;
     if (breathTimer) { clearInterval(breathTimer); breathTimer = null; }
     if (a === 'write') openWrite();
+    else if (a === 'menu') menu.openMenu();
     else if (a === 'feed') openFeed();
     else if (a === 'rules') openRules();
     else if (a === 'support') openSupport();
@@ -638,7 +657,13 @@ async function openAdmin() {
 }
 
 // ---------- Nút & chat ----------
-const OPENERS = { write: () => openWrite(), feed: openFeed, mine: openMine, notifs: openNotifs, profile: openProfile, admin: openAdmin, support: openSupport, rules: openRules };
+const menu = createMenu({
+  $, html, raw, api, toast, openModal, closeModal, openWrite,
+  getSocket: () => socket,
+  setTimer: (t) => { if (breathTimer) clearInterval(breathTimer); breathTimer = t; },
+  clearTimer: () => { if (breathTimer) { clearInterval(breathTimer); breathTimer = null; } },
+});
+const OPENERS = { menu: () => menu.openMenu(), write: () => openWrite(), feed: openFeed, mine: openMine, notifs: openNotifs, profile: openProfile, admin: openAdmin, support: openSupport, rules: openRules };
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-open]');
   if (!b) return;
@@ -665,24 +690,29 @@ function hasWebGL() {
     return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
   } catch { return false; }
 }
-async function boot() {
-  let GameClass = Game;
-  // Mặc định 3D; thêm ?2d vào URL để dùng bản 2D nhẹ cho máy yếu
-  if (hasWebGL() && !new URLSearchParams(location.search).has('2d')) {
-    try {
-      const [g3, a3] = await Promise.all([import('./game3d.js'), import('./avatar3d.js')]);
-      GameClass = g3.Game3D;
-      drawAvatarPreview = a3.drawAvatar3D;
-    } catch (err) { console.warn('Không tải được 3D, dùng bản 2D', err); }
-  }
-  game = new GameClass($('#game'), {
-    onMove: (m) => socket && socket.connected && socket.volatile.emit('move', m),
-    onTable: (id) => openTable(id),
-    onNpc: () => openNpc(false),
-    isUiOpen: isModalOpen,
-  });
-  window.__game = game; // tiện debug trên console
+let gameReady = null;
+function boot() {
+  // Form đăng nhập/đăng ký dùng được ngay, không chờ 3D tải xong
   setupAuth();
+  gameReady = (async () => {
+    let GameClass = Game;
+    // Mặc định 3D; thêm ?2d vào URL để dùng bản 2D nhẹ cho máy yếu
+    if (hasWebGL() && !new URLSearchParams(location.search).has('2d')) {
+      try {
+        const [g3, a3] = await Promise.all([import('./game3d.js'), import('./avatar3d.js')]);
+        GameClass = g3.Game3D;
+        drawAvatarPreview = a3.drawAvatar3D;
+      } catch (err) { console.warn('Không tải được 3D, dùng bản 2D', err); }
+    }
+    game = new GameClass($('#game'), {
+      onMove: (m) => socket && socket.connected && socket.volatile.emit('move', m),
+      onTable: (id) => openTable(id),
+      onNpc: () => openNpc(false),
+      isUiOpen: isModalOpen,
+    });
+    window.__game = game; // tiện debug trên console
+    if (regAvatar) drawAvatarPreview($('#regPreview'), regAvatar);
+  })();
   api('/auth/me').then(({ user }) => (user ? enter(user, false) : showAuth())).catch(showAuth);
 }
 boot();

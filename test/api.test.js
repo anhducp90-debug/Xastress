@@ -99,3 +99,17 @@ test('xoá tài khoản xoá sạch dữ liệu', async () => {
   const g = await client()(`/posts/${data.post.id}`);
   assert.strictEqual(g.status, 404);
 });
+
+test('mời nước: gửi thông báo, chặn món lạ, chặn tự mời, chặn mời dồn', async () => {
+  const a = client(), b = client();
+  await a('/auth/register', { username: 'moi_a', password: 'matkhau123' });
+  await b('/auth/register', { username: 'moi_b', password: 'matkhau123', nickname: 'Người Mời' });
+  const { data } = await a('/posts', { tableId: 'congviec', content: 'Hôm nay bị mắng oan, buồn ghê', anonymous: true });
+  const id = data.post.id;
+  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'bia' })).status, 400);
+  assert.strictEqual((await a(`/posts/${id}/treat`, { drink: 'tragung' })).status, 400);
+  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'tragung' })).status, 200);
+  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'caphe' })).status, 429);
+  const n = await a('/notifications');
+  assert.ok(n.data.items.some((x) => x.kind === 'treat:tragung' && x.actor === 'Người Mời'));
+});

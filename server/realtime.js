@@ -2,6 +2,7 @@
 // Không gian quán realtime: vị trí nhân vật, bong bóng chat, biểu cảm.
 const { maskBadWords, clean, hasCrisisSignal } = require('./moderation');
 const { hit } = require('./ratelimit');
+const { DRINKS } = require('./constants');
 
 const WORLD = { w: 640, h: 448 };
 const EMOTES = ['wave', 'heart', 'hug', 'cheer', 'tea', 'sad', 'laugh'];
@@ -57,6 +58,12 @@ function init(server, { userFromToken, cookieName, publicUser }) {
     socket.on('emote', (e) => {
       if (!EMOTES.includes(e) || !hit(`emote:${p.userId}`, 10, 10e3)) return;
       io.emit('emote', { sid: p.sid, e });
+    });
+
+    // Gọi nước ở quầy Cô Tư – cả quán thấy bạn cầm ly
+    socket.on('order', (drink) => {
+      if (!DRINKS.includes(drink) || !hit(`order:${p.userId}`, 6, 60e3)) return;
+      io.emit('order', { sid: p.sid, drink, nickname: p.nickname });
     });
 
     socket.on('profile', () => {

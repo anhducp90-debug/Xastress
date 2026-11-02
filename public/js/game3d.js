@@ -1,5 +1,6 @@
 // Engine 3D (Three.js): camera bám nhân vật, ánh sáng ngày/đêm theo giờ VN, xe cộ, NPC, nhãn chữ HTML.
-import { THREE, makeCharacter, poseCharacter } from './char3d.js';
+import { THREE, makeCharacter, poseCharacter, mat, geo, mesh } from './char3d.js';
+import { drinkById } from './menu.js';
 import { buildWorld, X, Z, bikeModel, flowerBikeModel } from './scene3d.js';
 import * as Wd from './world.js';
 
@@ -16,6 +17,31 @@ const XEOM_LINES = ['Xe ôm không cháu ơi?', 'Đi đâu chú chở, rẻ thô
 const VENDOR_LINES = ['Ai xoài, ổi, mận ngọt không?', 'Hoa quả tươi đây, ngọt lắm!', 'Mua giúp cô ít ổi đi cháu!', 'Ai bánh mì nóng giòn đây!'];
 const DIR_ANGLE = { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
 const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI; if (d < -Math.PI) d += Math.PI * 2; return a + d * t; };
+
+function drinkModel(id, color) {
+  const g = new THREE.Group();
+  if (id === 'nuocdua') {
+    const c = mesh(geo('sphere', 0.15, 12, 10), mat('#5f9e3a', { r: 0.6 }), 0, 0.12, 0); c.scale.y = 1.1; g.add(c);
+    g.add(mesh(geo('cyl', 0.07, 0.07, 0.02, 10), mat('#f4f1e0'), 0, 0.28, 0, false));
+    g.add(mesh(geo('cyl', 0.012, 0.012, 0.22, 6), mat('#ff6fa5'), 0.03, 0.36, 0).rotateZ(-0.25));
+    return g;
+  }
+  if (id === 'tragung' || id === 'daunanh') {
+    g.add(mesh(geo('cyl', 0.085, 0.075, 0.17, 14), mat('#f7f3ea', { r: 0.3 }), 0, 0.085, 0));
+    g.add(mesh(geo('cyl', 0.075, 0.075, 0.01, 14), mat(color, { r: 0.2 }), 0, 0.165, 0, false));
+    g.add(mesh(geo('torus', 0.045, 0.014, 6, 10), mat('#f7f3ea', { r: 0.3 }), 0.095, 0.09, 0));
+    return g;
+  }
+  g.add(mesh(geo('cyl', 0.085, 0.07, 0.24, 14), mat('#dff1ff', { o: 0.4, r: 0.05 }), 0, 0.12, 0, false));
+  g.add(mesh(geo('cyl', 0.076, 0.064, 0.18, 14), mat(color, { o: 0.9, r: 0.2 }), 0, 0.1, 0, false));
+  {
+    g.add(mesh(geo('box', 0.055, 0.055, 0.055), mat('#ffffff', { o: 0.85, r: 0.1 }), 0.02, 0.18, 0.01, false));
+    g.add(mesh(geo('box', 0.05, 0.05, 0.05), mat('#ffffff', { o: 0.85, r: 0.1 }), -0.03, 0.16, -0.02, false));
+  }
+  if (['trachanh', 'nuocmia', 'nuocsau'].includes(id)) g.add(mesh(geo('cyl', 0.011, 0.011, 0.3, 6), mat('#2fae5b'), 0.03, 0.27, 0).rotateZ(-0.2));
+  if (id === 'trachanh') g.add(mesh(geo('cyl', 0.05, 0.05, 0.012, 12), mat('#c6e05a'), -0.05, 0.215, 0).rotateZ(0.5));
+  return g;
+}
 
 export class Game3D {
   constructor(canvas, hooks) {
@@ -161,6 +187,21 @@ export class Game3D {
     if (t) this.sparkles.push({ x: t.x, y: t.y, t0: performance.now(), id: Math.random() });
   }
   npcSay(who, text) { this.talk.set(who, { text, until: performance.now() + 4800 }); }
+  coTuSay(text) { this.npcSay('npc', text); this.talkNext.npc = performance.now() + 15000; }
+  // Nhân vật cầm ly nước vừa gọi trong 90 giây
+  holdDrink(sid, id) {
+    const p = this.players.get(sid);
+    const d = drinkById[id];
+    if (!p || !d) return;
+    if (p.cup) p.cup.parent.remove(p.cup);
+    const cup = drinkModel(id, d.color);
+    cup.position.set(0, -0.44, 0.07);
+    cup.rotation.x = 0.9;
+    p.model.userData.parts.arms[1].add(cup);
+    p.cup = cup;
+    p.cupUntil = performance.now() + 90000;
+    if (p === this.me && !p.moving && !p.sit) { p.dir = 'down'; this.sendMove(true); } // quay ra khoe ly nước
+  }
 
   // ---------- Điều khiển ----------
   bindInput() {
@@ -341,6 +382,10 @@ export class Game3D {
       p.model.position.set(X(p.x), 0, Z(p.y));
       p.model.rotation.y = p.face;
       poseCharacter(p.model, dt, { moving: p.moving, sit: p.sit });
+      if (p.cup) {
+        if (now > p.cupUntil || p.cup.parent !== p.model.userData.parts.arms[1]) { if (p.cup.parent) p.cup.parent.remove(p.cup); p.cup = null; }
+        else { const ar = p.model.userData.parts.arms[1]; ar.rotation.x = -0.9 + (p.moving ? Math.sin(now / 200) * 0.05 : Math.max(0, Math.sin(now / 2500)) * -0.6); }
+      }
     }
 
     // Xe cộ
