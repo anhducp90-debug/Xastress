@@ -1,0 +1,26 @@
+# /etc/systemd/system/xastress.service
+[Unit]
+Description=Tra Da Xa Stress (xastress.info.vn)
+After=network.target
+
+[Service]
+Type=simple
+User=xastress
+Group=xastress
+WorkingDirectory=/opt/xastress
+EnvironmentFile=/opt/xastress/.env
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+# Gia cố bảo mật
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/xastress/data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

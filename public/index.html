@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Trà Đá Xả Stress</title>
+  <meta name="description" content="Quán trà đá vỉa hè online – nơi bạn ẩn danh kể chuyện ức chế, được đồng cảm, chia sẻ và cổ vũ để sống tốt hơn.">
+  <meta name="theme-color" content="#7a2318">
+  <meta property="og:title" content="Trà Đá Xả Stress – xastress.info.vn">
+  <meta property="og:description" content="Ngồi xuống, gọi ly trà đá, kể chuyện cho nhẹ lòng.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Không gian quán trà đá"></canvas>
+
+  <!-- Thanh trên -->
+  <header id="hud" class="hidden">
+    <div class="brand">☕ <b>Trà Đá Xả Stress</b> <span id="online" class="chip">0 người trong quán</span></div>
+    <nav>
+      <button class="btn" data-open="write">✍️ <span>Kể chuyện</span></button>
+      <button class="btn" data-open="feed">📰 <span>Quanh quán</span></button>
+      <button class="btn" data-open="mine">📜 <span>Của tôi</span></button>
+      <button class="btn" data-open="notifs" id="bellBtn">🔔 <span class="badge hidden" id="bell">0</span></button>
+      <button class="btn" data-open="profile">👤</button>
+      <button class="btn hidden" data-open="admin" id="adminBtn">🛡️</button>
+      <button class="btn warm" data-open="support">☎️ <span>Cần giúp</span></button>
+    </nav>
+  </header>
+
+  <!-- Chat dưới -->
+  <footer id="chatbar" class="hidden">
+    <div class="emotes">
+      <button data-emote="wave" title="Chào">👋</button>
+      <button data-emote="hug" title="Ôm">🤗</button>
+      <button data-emote="heart" title="Thương">❤️</button>
+      <button data-emote="cheer" title="Cố lên">💪</button>
+      <button data-emote="tea" title="Cạn ly">🍵</button>
+      <button data-emote="laugh" title="Cười">😂</button>
+      <button data-emote="sad" title="Buồn">😢</button>
+    </div>
+    <form id="chatForm" autocomplete="off">
+      <input id="chatInput" maxlength="120" placeholder="Nói gì đó với mọi người trong quán… (Enter)">
+      <button class="btn" type="submit">Gửi</button>
+    </form>
+  </footer>
+  <div id="help" class="hidden">🕹️ Di chuyển: <b>WASD/←↑→↓</b> hoặc <b>chạm/nhấp</b> · Đến gần bàn bấm <b>E</b> để ngồi</div>
+
+  <!-- Màn hình vào quán -->
+  <section id="auth" class="overlay">
+    <div class="panel auth-panel">
+      <div class="auth-hero">
+        <div class="logo">☕</div>
+        <h1>Trà Đá Xả Stress</h1>
+        <p class="tag">Ngồi xuống, gọi ly trà đá, kể chuyện cho nhẹ lòng.</p>
+      </div>
+      <ul class="promises">
+        <li>🎭 <b>Danh tính riêng, ẩn danh:</b> chỉ cần biệt danh. Không email, không số điện thoại.</li>
+        <li>🔒 <b>Bảo mật:</b> tên đăng nhập không bao giờ hiện cho ai. Có thể đăng hoàn toàn ẩn danh và xoá tài khoản bất cứ lúc nào.</li>
+        <li>🤝 <b>Đồng cảm:</b> mỗi bàn một câu chuyện – công việc, gia đình, tình cảm… Mọi người lắng nghe và cổ vũ bạn.</li>
+      </ul>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="register">Ghé quán lần đầu</button>
+        <button class="tab" data-tab="login">Khách quen</button>
+      </div>
+      <form id="registerForm" class="form">
+        <div class="avatar-row">
+          <canvas id="regPreview" width="120" height="150"></canvas>
+          <div class="grow">
+            <label>Biệt danh công khai
+              <span class="row"><input name="nickname" maxlength="32" placeholder="vd: Trà Chanh #2024"><button type="button" class="btn small" id="randNick">🎲</button></span>
+            </label>
+            <div id="regAvatar" class="avatar-editor"></div>
+          </div>
+        </div>
+        <label>Tên đăng nhập (bí mật) <input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]{3,24}" autocomplete="username" placeholder="chỉ bạn biết"></label>
+        <label>Mật khẩu <input name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="ít nhất 8 ký tự"></label>
+        <label class="check"><input type="checkbox" name="rules" required> Tôi đồng ý <a href="#" data-open="rules">nội quy quán</a>: tôn trọng, tử tế, không phán xét.</label>
+        <p class="err" id="regErr"></p>
+        <button class="btn big warm" type="submit">🍵 Vào quán</button>
+      </form>
+      <form id="loginForm" class="form hidden">
+        <label>Tên đăng nhập <input name="username" required autocomplete="username"></label>
+        <label>Mật khẩu <input name="password" type="password" required autocomplete="current-password"></label>
+        <p class="err" id="loginErr"></p>
+        <button class="btn big warm" type="submit">🍵 Vào quán</button>
+      </form>
+      <p class="fine">Không lưu mật khẩu, nên hãy ghi nhớ kỹ. Quán không thay thế chuyên gia tâm lý – nếu bạn đang gặp nguy hiểm, bấm <a href="#" data-open="support">Cần giúp</a>.</p>
+    </div>
+  </section>
+
+  <!-- Hộp thoại chung -->
+  <section id="modal" class="overlay hidden" aria-modal="true" role="dialog">
+    <div class="panel modal-panel">
+      <button class="close" id="modalClose" aria-label="Đóng">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </section>
+
+  <div id="toasts"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
