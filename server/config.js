@@ -21,4 +21,10 @@ module.exports = {
   adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   trustProxy: env.TRUST_PROXY === '1',
   sessionDays: 30,
+  ai: {
+    // Có ANTHROPIC_API_KEY (hoặc ANTHROPIC_AUTH_TOKEN) thì bật Cô Tư AI; đặt AI_ENABLED=0 để tắt hẳn
+    enabled: !!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) && env.AI_ENABLED !== '0',
+    model: env.AI_MODEL || 'claude-opus-5-5',
+    effort: env.AI_EFFORT || 'medium',
+  },
 };

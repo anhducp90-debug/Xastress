@@ -34,4 +34,35 @@ function clean(text, max) {
     .slice(0, max);
 }
 
-module.exports = { maskBadWords, hasCrisisSignal, clean };
+// ---- Lời nhắn kèm ly nước: chỉ cho phép lời tử tế ----
+// Cụm từ phán xét, chê bai, mỉa mai, xua đuổi thường gặp
+const NEGATIVE = [
+  'đáng đời', 'đáng kiếp', 'chết đi', 'đi chết', 'tự tử đi', 'biến đi', 'cút', 'xéo', 'im đi', 'im mồm',
+  'vô dụng', 'yếu đuối', 'yếu đuối thế', 'hèn', 'thảm hại', 'thất bại', 'ăn hại', 'phế vật', 'đồ bỏ đi',
+  'ngu', 'đần', 'ngốc', 'óc', 'não cá vàng', 'khùng', 'điên', 'thần kinh',
+  'làm quá', 'làm lố', 'có thế thôi', 'có vậy thôi', 'có thế mà', 'chuyện nhỏ mà cũng', 'than vãn', 'than thở hoài', 'kêu ca',
+  'tự làm tự chịu', 'tự chuốc', 'ai bảo', 'kệ bạn', 'kệ mày', 'mặc kệ', 'ai quan tâm', 'ai thèm', 'liên quan gì',
+  'nhảm', 'xàm', 'vớ vẩn', 'câu like', 'câu view', 'giả tạo', 'drama', 'ảo tưởng', 'nực cười', 'buồn cười thật',
+  'ghét', 'khinh', 'tởm', 'kinh tởm', 'hãm', 'mày', 'tao',
+];
+const NEGATORS = /(không|chẳng|chả|đâu có|đừng|ko|k|hông|chưa bao giờ|đâu phải|không phải|chẳng phải)\s+(\p{L}+\s+){0,2}$/iu;
+const negRe = new RegExp(`(?<![\\p{L}\\p{N}])(${NEGATIVE.map(esc).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+
+/**
+ * Kiểm tra lời nhắn kèm ly nước.
+ * Trả về { ok, hard, hits }:
+ *  - hard=true: có từ thô tục -> chặn luôn
+ *  - hits: các cụm tiêu cực KHÔNG bị phủ định (vd "bạn không vô dụng đâu" là lời tốt)
+ */
+function screenKindMessage(text) {
+  const t = text.normalize('NFC');
+  if (maskBadWords(t) !== t) return { ok: false, hard: true, hits: ['ngôn từ thô tục'] };
+  const hits = [];
+  for (const m of t.matchAll(negRe)) {
+    const before = t.slice(Math.max(0, m.index - 24), m.index);
+    if (!NEGATORS.test(before)) hits.push(m[0]);
+  }
+  return { ok: hits.length === 0, hard: false, hits };
+}
+
+module.exports = { maskBadWords, hasCrisisSignal, clean, screenKindMessage };

@@ -71,10 +71,54 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read, created_at DESC);
+-- Mời nước: ai mời ai, món gì, bao nhiêu ly, lời nhắn (đã kiểm duyệt)
+CREATE TABLE IF NOT EXISTS treats (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  from_user   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  drink       TEXT NOT NULL,
+  qty         INTEGER NOT NULL DEFAULT 1,
+  message     TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_treats_post ON treats(post_id);
+CREATE INDEX IF NOT EXISTS idx_treats_to ON treats(to_user, created_at DESC);
+-- Gói AI tâm sự mua bằng xu theo món nước
+CREATE TABLE IF NOT EXISTS ai_packs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  drink       TEXT NOT NULL,
+  turns_left  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_packs_user ON ai_packs(user_id, expires_at DESC);
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  pack_id     INTEGER NOT NULL REFERENCES ai_packs(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aimsg_pack ON ai_messages(pack_id, id);
 `);
+
+// Nâng cấp CSDL cũ: thêm cột nếu chưa có
+function addColumn(table, col, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+}
+addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 30');       // ví xu, tặng 30 xu khi vào quán
+addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");   // ngày nhận xu miễn phí gần nhất
+addColumn('notifications', 'message', "TEXT NOT NULL DEFAULT ''");
+addColumn('notifications', 'qty', 'INTEGER NOT NULL DEFAULT 1');
+
+// Quyền riêng tư: xoá hội thoại AI của gói đã hết hạn quá 7 ngày
+const purgeAi = db.prepare('DELETE FROM ai_packs WHERE expires_at < ?');
 
 // Dọn phiên hết hạn định kỳ
 const purge = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
-setInterval(() => purge.run(Date.now()), 60 * 60 * 1000).unref();
+setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); }, 60 * 60 * 1000).unref();
 
 module.exports = db;

@@ -1,7 +1,10 @@
 'use strict';
 const express = require('express');
 const db = require('./db');
-const { TABLES, MOODS, REACTIONS, DRINKS } = require('./constants');
+const { TABLES, MOODS, REACTIONS, DRINKS, ECONOMY } = require('./constants');
+const { screenKindMessage } = require('./moderation');
+const ai = require('./ai');
+const { funnyReply, comboReply } = require('./funny');
 const { clean, maskBadWords, hasCrisisSignal } = require('./moderation');
 const { requireUser, requireAdmin } = require('./auth');
 const { hit } = require('./ratelimit');
@@ -46,6 +49,18 @@ const q = {
   reports: db.prepare(`SELECT target_type, target_id, COUNT(*) n, GROUP_CONCAT(reason, ' | ') reasons, MAX(created_at) last
     FROM reports GROUP BY target_type, target_id ORDER BY last DESC LIMIT 100`),
   ban: db.prepare('UPDATE users SET banned = 1 WHERE id = ?'),
+  treatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE post_id = ? GROUP BY drink'),
+  treatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, u.nickname FROM treats t JOIN users u ON u.id = t.from_user
+    WHERE t.post_id = ? AND t.message != '' ORDER BY t.id DESC LIMIT 40`),
+  treatGivenToday: db.prepare('SELECT COALESCE(SUM(qty), 0) n FROM treats WHERE from_user = ? AND post_id = ? AND created_at > ?'),
+  treatRecvToday: db.prepare('SELECT COALESCE(SUM(qty), 0) n FROM treats WHERE to_user = ? AND created_at > ?'),
+  insertTreat: db.prepare('INSERT INTO treats (post_id, from_user, to_user, drink, qty, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+  notifyTreat: db.prepare('INSERT INTO notifications (user_id, kind, post_id, actor, message, qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+  addXu: db.prepare('UPDATE users SET xu = xu + ? WHERE id = ?'),
+  myTreatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE to_user = ? GROUP BY drink'),
+  myTreatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, t.post_id, u.nickname, substr(p.content, 1, 60) preview
+    FROM treats t JOIN users u ON u.id = t.from_user JOIN posts p ON p.id = t.post_id
+    WHERE t.to_user = ? ORDER BY t.id DESC LIMIT 40`),
   killSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
 };
 
@@ -68,8 +83,10 @@ function shapePost(p, viewer, { full = false } = {}) {
     myReactions: viewer ? q.myReacts.all(p.id, viewer.id).map((r) => r.kind) : [],
     commentCount: q.commentCount.get(p.id).n,
     crisis: hasCrisisSignal(p.content),
+    treats: treatSummary(q.treatCounts.all(p.id)),
   };
   if (full) {
+    out.treatNotes = q.treatNotes.all(p.id).map((t) => ({ drink: t.drink, qty: t.qty, message: t.message, from: t.nickname, createdAt: t.created_at }));
     out.comments = q.comments.all(p.id).map((c) => {
       const byAuthor = c.user_id === p.user_id;
       return {
@@ -84,6 +101,18 @@ function shapePost(p, viewer, { full = false } = {}) {
     });
   }
   return out;
+}
+
+// Bộ đếm ly nước theo từng món + lời đáp hài hước theo số lượng
+function treatSummary(rows) {
+  const counts = {};
+  let total = 0, top = null;
+  for (const r of rows) { counts[r.drink] = r.n; total += r.n; if (!top || r.n > counts[top]) top = r.drink; }
+  const kinds = Object.keys(counts).length;
+  return {
+    counts, total,
+    funny: top ? (comboReply(total, kinds) || funnyReply(top, counts[top])) : '',
+  };
 }
 
 const int = (v) => {
@@ -174,18 +203,71 @@ router.post('/posts/:id/comments', requireUser, (req, res) => {
   res.json({ post: shapePost(q.post.get(p.id), req.user, { full: true }) });
 });
 
-// Mời người kể chuyện một ly nước (chỉ gửi thông báo, không lộ danh tính người kể)
-router.post('/posts/:id/treat', requireUser, (req, res) => {
+// Mời người kể chuyện một hoặc nhiều ly nước, kèm lời nhắn (đã kiểm duyệt)
+const KIND_SUGGEST = [
+  'Mình hiểu cảm giác này, bạn không một mình đâu.', 'Bạn đã cố gắng nhiều lắm rồi.',
+  'Nghỉ ngơi chút đi, mọi chuyện rồi sẽ ổn.', 'Uống ly nước cho mát, rồi mình tính tiếp nha.',
+];
+async function checkKind(message) {
+  const local = screenKindMessage(message);
+  if (local.hard) return { ok: false, reason: 'Lời nhắn có từ ngữ thô tục.' };
+  if (ai.isEnabled()) {
+    try {
+      const r = await ai.classifyKindMessage(message);
+      return { ok: r.verdict === 'ok', reason: r.reason };
+    } catch (err) {
+      console.warn('Phân loại lời nhắn bằng AI lỗi, dùng bộ lọc từ khoá:', err.status || err.name);
+    }
+  }
+  return { ok: local.ok, reason: local.ok ? '' : `Có cụm từ dễ làm người nhận buồn lòng: "${local.hits.join('", "')}".` };
+}
+
+router.post('/posts/:id/treat', requireUser, async (req, res) => {
   const p = q.post.get(int(req.params.id));
   const { drink } = req.body || {};
+  const qty = [1, 3, 10].includes(Number(req.body && req.body.qty)) ? Number(req.body.qty) : 1;
+  const message = clean(req.body && req.body.message, 200).replace(/\s+/g, ' ');
   if (!p || p.hidden) return res.status(404).json({ error: 'Không tìm thấy tâm sự này.' });
   if (!DRINKS.includes(drink)) return res.status(400).json({ error: 'Quán không có món này.' });
   if (p.user_id === req.user.id) return res.status(400).json({ error: 'Tự mời mình thì gọi thẳng ở quầy nhé 😄' });
-  if (!hit(`treat:${req.user.id}`, 20, 10 * 60e3)) return res.status(429).json({ error: 'Bạn hào phóng quá! Nghỉ tay chút rồi mời tiếp nhé.' });
-  if (!hit(`treat:${req.user.id}:${p.id}`, 1, 30 * 60e3)) return res.status(429).json({ error: 'Bạn vừa mời người này rồi, để họ uống từ từ đã.' });
-  q.notify.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, Date.now());
-  realtime.notifyUser(p.user_id, { kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname });
-  res.json({ ok: true });
+  const dayAgo = Date.now() - 86400e3;
+  if (q.treatGivenToday.get(req.user.id, p.id, dayAgo).n + qty > 20) {
+    return res.status(429).json({ error: 'Hôm nay bạn đã mời người này nhiều lắm rồi, để họ uống từ từ đã 😅' });
+  }
+  if (!hit(`treat:${req.user.id}`, 40, 86400e3)) return res.status(429).json({ error: 'Bạn hào phóng quá! Mai mời tiếp nhé.' });
+  if (message) {
+    const verdict = await checkKind(message);
+    if (!verdict.ok) {
+      return res.status(422).json({
+        error: 'Lời nhắn này có thể làm người nhận buồn lòng thêm, quán chưa gửi được.',
+        blocked: true, reason: verdict.reason, suggestions: KIND_SUGGEST,
+      });
+    }
+  }
+  const now = Date.now();
+  q.insertTreat.run(p.id, req.user.id, p.user_id, drink, qty, message, now);
+  q.notifyTreat.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, message, qty, now);
+  // Người được mời nhận thêm xu để gọi gói Cô Tư AI (có trần mỗi ngày)
+  const recvToday = q.treatRecvToday.get(p.user_id, dayAgo).n - qty;
+  const bonus = Math.max(0, Math.min(qty * ECONOMY.xuPerTreatReceived, ECONOMY.xuFromTreatsPerDay - recvToday));
+  if (bonus) q.addXu.run(bonus, p.user_id);
+  const summary = treatSummary(q.treatCounts.all(p.id));
+  const reply = funnyReply(drink, summary.counts[drink]);
+  realtime.notifyUser(p.user_id, {
+    kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname, qty, message, total: summary.counts[drink], funny: reply, bonus,
+  });
+  realtime.broadcast('treat', { postId: p.id, tableId: p.table_id, drink, qty });
+  res.json({ ok: true, treats: summary, reply, count: summary.counts[drink] });
+});
+
+// Quầy quà của tôi: tổng số ly nhận được theo món + lời nhắn
+router.get('/me/treats', requireUser, (req, res) => {
+  res.json({
+    treats: treatSummary(q.myTreatCounts.all(req.user.id)),
+    notes: q.myTreatNotes.all(req.user.id).map((t) => ({
+      drink: t.drink, qty: t.qty, message: t.message, from: t.nickname, createdAt: t.created_at, postId: t.post_id, preview: t.preview,
+    })),
+  });
 });
 
 router.post('/posts/:id/resolve', requireUser, (req, res) => {
@@ -228,7 +310,7 @@ router.get('/notifications', requireUser, (req, res) => {
   res.json({
     unread: q.unread.get(req.user.id).n,
     items: q.notifs.all(req.user.id).map((n) => ({
-      id: n.id, kind: n.kind, postId: n.post_id, actor: n.actor, read: !!n.is_read,
+      id: n.id, kind: n.kind, postId: n.post_id, actor: n.actor, read: !!n.is_read, message: n.message, qty: n.qty,
       createdAt: n.created_at, preview: n.content.slice(0, 60),
     })),
   });

@@ -1,7 +1,7 @@
 // Giao diện: đăng nhập, bảng tâm sự, bình luận, hồ sơ, realtime.
 import { Game } from './game.js';
 import { TABLES, tableById } from './world.js';
-import { createMenu, drinkById } from './menu.js';
+import { createMenu, drinkById, treatChips } from './menu.js';
 import { drawAvatarPreview as drawAvatar2D, AVATAR_OPTIONS, AVATAR_LABELS, PALETTE, HAIR_NAMES, HAT_NAMES } from './sprites.js';
 
 let drawAvatarPreview = drawAvatar2D;
@@ -36,7 +36,7 @@ async function api(path, opts = {}) {
   });
   let data = {};
   try { data = await res.json(); } catch { /* bỏ qua */ }
-  if (!res.ok) throw new Error(data.error || 'Có lỗi xảy ra, thử lại nhé.');
+  if (!res.ok) { const e = new Error(data.error || 'Có lỗi xảy ra, thử lại nhé.'); e.data = data; e.status = res.status; throw e; }
   return data;
 }
 
@@ -69,10 +69,10 @@ const SUPPORT_HTML = html`
     <p>Hoặc gọi cho một người bạn tin tưởng ngay lúc này. Quán luôn ở đây, nhưng bạn xứng đáng được giúp đỡ trực tiếp. <br><small>Số điện thoại có thể thay đổi theo thời gian – hãy kiểm tra lại nếu không gọi được.</small></p>
   </div>`;
 
-function notifText(kind, live) {
+function notifText(kind, live, qty = 1) {
   const [k, v] = kind.split(':');
   if (k === 'comment') return live ? 'vừa gửi lời động viên cho bạn 💌' : 'đã gửi lời động viên 💌';
-  if (k === 'treat') { const d = drinkById[v]; return d ? `đã mời bạn một ly ${d.name.toLowerCase()} ${d.icon}` : 'đã mời bạn một ly nước 🍵'; }
+  if (k === 'treat') { const d = drinkById[v]; return d ? `${live ? 'vừa ' : 'đã '}mời bạn ${qty} ly ${d.name.toLowerCase()} ${d.icon}` : `đã mời bạn ${qty} ly nước 🍵`; }
   return live ? `vừa ${REACTS[v] || 'thả tim'} tâm sự của bạn` : `đã bày tỏ ${REACTS[v] || ''}`;
 }
 
@@ -258,10 +258,12 @@ function connect() {
   socket.on('post:new', (p) => { game.sparkleTable(p.tableId); refreshTables(); });
   socket.on('post:remove', () => refreshTables());
   socket.on('notify', (n) => {
-    const kind = notifText(n.kind, true);
-    toast(`${n.actor} ${kind}`);
+    toast(`${n.actor} ${notifText(n.kind, true, n.qty || 1)}${n.message ? `: “${n.message}”` : ''}`);
+    if (n.funny) setTimeout(() => toast(`😅 ${n.funny}`), 700);
+    if (n.bonus) setTimeout(() => toast(`+${n.bonus} xu vào ví để gọi Cô Tư AI 👛`), 1400);
     refreshNotifs();
   });
+  socket.on('treat', (t) => { game.sparkleTable(t.tableId); });
   socket.on('disconnect', (reason) => {
     if (reason === 'io server disconnect') { toast('Bạn đã bị mời ra khỏi quán.', true); showAuth(); }
   });
@@ -298,6 +300,7 @@ function postCard(p, { clickable = true, full = false } = {}) {
     <div class="reacts">
       ${Object.entries(REACTS).map(([k, label]) => html`<button class="btn small react ${p.myReactions.includes(k) ? 'on' : ''}" data-react="${k}" data-id="${p.id}">${label} <b>${p.reactions[k] || 0}</b></button>`)}
       <span class="mood">💬 ${p.commentCount}</span>
+      ${p.treats && p.treats.total ? html`<span class="counters">${raw(treatChips(p.treats))}</span>` : ''}
     </div>
   </article>`;
 }
@@ -378,10 +381,18 @@ async function openFeed() {
 async function openMine() {
   openModal(html`<h2>📜 Tâm sự của tôi</h2><p class="empty">Đang tìm…</p>`, 'mine');
   try {
-    const { posts } = await api('/posts/mine');
+    const [{ posts }, gifts] = await Promise.all([api('/posts/mine'), api('/me/treats')]);
     if (currentView !== 'mine') return;
     $('#modalBody').innerHTML = html`
       <h2>📜 Tâm sự của tôi</h2>
+      <section class="treat-box">
+        <h3>🎁 Quầy quà của bạn ${gifts.treats.total ? `– ${gifts.treats.total} ly nước` : ''}</h3>
+        ${gifts.treats.total ? html`
+          <div class="counters big">${raw(treatChips(gifts.treats))}</div>
+          <div class="reply-bubble"><b>Bạn:</b> “${gifts.treats.funny}”</div>
+          ${gifts.notes.filter((t) => t.message).slice(0, 12).map((t) => html`<div class="tnote">${drinkById[t.drink] ? drinkById[t.drink].icon : '🍵'}×${t.qty} <b>${t.from}</b>: “${t.message}” <small>${ago(t.createdAt)}</small></div>`)}`
+        : html`<p class="tag">Khi bạn kể chuyện, mọi người có thể mời bạn trà đá, cà phê… kèm lời nhắn. Mỗi ly được +1 xu.</p>`}
+      </section>
       <p class="tag">Chỉ mình bạn thấy danh sách này. Khi đã ổn hơn, hãy đánh dấu "Đã vượt qua" để truyền cảm hứng cho người khác ✨</p>
       <div id="list">${posts.length ? posts.map((p) => postCard(p)) : html`<div class="empty"><div class="big">📝</div>Bạn chưa kể chuyện nào.</div>`}</div>`.s;
     hydrateAvatars($('#modalBody'));
@@ -398,6 +409,15 @@ async function openPost(id, back) {
       <h2>${t ? `${t.icon} Bàn ${t.name}` : 'Tâm sự'}</h2>
       ${p.isMine && p.crisis ? SUPPORT_HTML : ''}
       <div id="list">${postCard(p, { clickable: false, full: true })}</div>
+      <section class="treat-box">
+        <h3>🎁 Nước mọi người mời ${p.treats.total ? `(${p.treats.total} ly)` : ''}</h3>
+        ${p.treats.total ? html`
+          <div class="counters big">${raw(treatChips(p.treats))}</div>
+          <div class="reply-bubble"><b>${p.isMine ? 'Bạn' : 'Người được mời'}:</b> “${p.treats.funny}”</div>
+          ${p.treatNotes.length ? html`<div class="treat-notes">${p.treatNotes.map((t) => html`<div class="tnote">${drinkById[t.drink] ? drinkById[t.drink].icon : '🍵'}×${t.qty} <b>${t.from}</b>: “${t.message}” <small>${ago(t.createdAt)}</small></div>`)}</div>` : ''}`
+        : html`<p class="tag">${p.isMine ? 'Chưa ai mời nước. Mọi người sẽ ghé qua thôi 🍵' : 'Chưa ai mời. Mời người ấy ly nước đầu tiên nhé!'}</p>`}
+        ${p.isMine ? '' : html`<div id="treatSlot"><button class="btn green" id="openTreat">🎁 Mời người này một ly</button></div>`}
+      </section>
       <div class="actions">
         ${p.isMine ? html`<button class="btn ${p.resolved ? '' : 'green'}" id="resolve">${p.resolved ? '↩️ Bỏ đánh dấu' : '✨ Tôi đã vượt qua'}</button>
           <button class="btn" id="delPost">🗑️ Xoá</button>` : html`<button class="linkish" data-report="post" data-id="${p.id}">🚩 Báo cáo</button>`}
@@ -420,6 +440,8 @@ async function openPost(id, back) {
     `, 'post');
     if (back) $('#back').onclick = back;
     bindPostList($('#list'), null);
+    const ot = $('#openTreat');
+    if (ot) ot.onclick = () => menu.mountTreat($('#treatSlot'), p.id, () => setTimeout(() => { if (currentView === 'post') openPost(p.id, back); }, 3500));
     const form = $('#commentForm');
     $('.suggest', form).onclick = (e) => {
       const b = e.target.closest('[data-s]');
@@ -505,7 +527,8 @@ async function openNotifs() {
       <h2>🔔 Thông báo</h2>
       ${items.length ? items.map((n) => html`
         <div class="notif ${n.read ? '' : 'unread'}" data-post="${n.postId}">
-          <b>${n.actor}</b> ${notifText(n.kind, false)}
+          <b>${n.actor}</b> ${notifText(n.kind, false, n.qty || 1)}
+          ${n.message ? html`<div class="notif-msg">💌 “${n.message}”</div>` : ''}
           <small>“${n.preview}…” · ${ago(n.createdAt)}</small>
         </div>`) : html`<div class="empty"><div class="big">🔕</div>Chưa có thông báo nào.</div>`}`, 'notifs');
     $('#modalBody').onclick = (e) => {
@@ -658,7 +681,7 @@ async function openAdmin() {
 
 // ---------- Nút & chat ----------
 const menu = createMenu({
-  $, html, raw, api, toast, openModal, closeModal, openWrite,
+  $, html, raw, api, toast, openModal, closeModal, openWrite, supportHtml: SUPPORT_HTML,
   getSocket: () => socket,
   setTimer: (t) => { if (breathTimer) clearInterval(breathTimer); breathTimer = t; },
   clearTimer: () => { if (breathTimer) { clearInterval(breathTimer); breathTimer = null; } },

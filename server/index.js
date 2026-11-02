@@ -64,6 +64,7 @@ app.post('/api/auth/profile', auth.requireUser, auth.updateProfile);
 app.post('/api/auth/password', authLimiter, auth.requireUser, auth.changePassword);
 app.post('/api/auth/delete', authLimiter, auth.requireUser, auth.deleteAccount);
 app.use('/api', posts);
+app.use('/api', require('./aiRoutes'));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy.' }));
 

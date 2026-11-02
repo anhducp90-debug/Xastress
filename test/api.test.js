@@ -8,6 +8,7 @@ const path = require('path');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xastress-'));
 process.env.DB_PATH = path.join(tmp, 'test.db');
 process.env.ADMIN_USERNAMES = 'quanly';
+process.env.AI_ENABLED = '0'; // test không gọi API thật
 const { server } = require('../server/index.js');
 const { maskBadWords, hasCrisisSignal } = require('../server/moderation');
 
@@ -100,16 +101,77 @@ test('xoá tài khoản xoá sạch dữ liệu', async () => {
   assert.strictEqual(g.status, 404);
 });
 
-test('mời nước: gửi thông báo, chặn món lạ, chặn tự mời, chặn mời dồn', async () => {
-  const a = client(), b = client();
+test('mời nước: 101 ly trà đá, lời đáp hài hước, bộ đếm theo món, thông báo kèm lời nhắn, tặng xu', async () => {
+  const a = client();
   await a('/auth/register', { username: 'moi_a', password: 'matkhau123' });
-  await b('/auth/register', { username: 'moi_b', password: 'matkhau123', nickname: 'Người Mời' });
   const { data } = await a('/posts', { tableId: 'congviec', content: 'Hôm nay bị mắng oan, buồn ghê', anonymous: true });
   const id = data.post.id;
-  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'bia' })).status, 400);
-  assert.strictEqual((await a(`/posts/${id}/treat`, { drink: 'tragung' })).status, 400);
-  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'tragung' })).status, 200);
-  assert.strictEqual((await b(`/posts/${id}/treat`, { drink: 'caphe' })).status, 429);
-  const n = await a('/notifications');
-  assert.ok(n.data.items.some((x) => x.kind === 'treat:tragung' && x.actor === 'Người Mời'));
+  const xu0 = (await a('/wallet')).data.xu;
+
+  const givers = [];
+  for (let i = 0; i < 6; i++) {
+    const g = client();
+    await g('/auth/register', { username: `moi_g${i}`, password: 'matkhau123', nickname: `Khách Mời ${i}` });
+    givers.push(g);
+  }
+  assert.strictEqual((await givers[0](`/posts/${id}/treat`, { drink: 'bia' })).status, 400);
+  assert.strictEqual((await a(`/posts/${id}/treat`, { drink: 'trada' })).status, 400, 'không tự mời');
+  let last;
+  for (let i = 0; i < 5; i++) {
+    for (let k = 0; k < 2; k++) {
+      last = await givers[i](`/posts/${id}/treat`, { drink: 'trada', qty: 10, message: k ? '' : 'Cố lên bạn ơi, mình hiểu mà' });
+      assert.strictEqual(last.status, 200);
+    }
+  }
+  assert.strictEqual((await givers[0](`/posts/${id}/treat`, { drink: 'trada', qty: 1 })).status, 429, 'tối đa 20 ly/người/ngày cho một tâm sự');
+  last = await givers[5](`/posts/${id}/treat`, { drink: 'trada', qty: 1, message: 'Bạn không vô dụng đâu, nghỉ chút nhé' });
+  assert.strictEqual(last.status, 200, 'lời tử tế có chữ phủ định vẫn được gửi');
+  assert.strictEqual(last.data.count, 101);
+  assert.match(last.data.reply, /101 ly trà đá/);
+  assert.match(last.data.reply, /uống hết/);
+  await givers[5](`/posts/${id}/treat`, { drink: 'tragung', qty: 3 });
+
+  const post = (await a(`/posts/${id}`)).data.post;
+  assert.deepStrictEqual(post.treats.counts, { trada: 101, tragung: 3 });
+  assert.strictEqual(post.treats.total, 104);
+  assert.ok(post.treatNotes.some((t) => t.message === 'Bạn không vô dụng đâu, nghỉ chút nhé'));
+
+  const notifs = (await a('/notifications')).data.items;
+  assert.ok(notifs.some((n) => n.kind === 'treat:trada' && n.qty === 10 && n.message === 'Cố lên bạn ơi, mình hiểu mà'));
+  const mine = (await a('/me/treats')).data;
+  assert.strictEqual(mine.treats.counts.trada, 101);
+  assert.strictEqual((await a('/wallet')).data.xu, xu0 + 20, 'người được mời nhận xu, tối đa 20 xu/ngày');
+});
+
+test('chặn lời nhắn tiêu cực kèm ly nước', async () => {
+  const a = client(), b = client();
+  await a('/auth/register', { username: 'neg_a', password: 'matkhau123' });
+  await b('/auth/register', { username: 'neg_b', password: 'matkhau123' });
+  const { data } = await a('/posts', { tableId: 'giadinh', content: 'Cãi nhau với bố mẹ, mệt mỏi quá' });
+  for (const m of ['Đáng đời, ai bảo không nghe lời', 'Có thế thôi mà cũng than', 'đm cố lên', 'Mày yếu đuối quá']) {
+    const r = await b(`/posts/${data.post.id}/treat`, { drink: 'trachanh', message: m });
+    assert.strictEqual(r.status, 422, m);
+    assert.ok(r.data.blocked && r.data.suggestions.length);
+  }
+  const ok = await b(`/posts/${data.post.id}/treat`, { drink: 'trachanh', message: 'Đừng nghĩ mình thất bại nhé, thương bạn' });
+  assert.strictEqual(ok.status, 200);
+  assert.strictEqual((await a('/notifications')).data.items.filter((n) => n.kind.startsWith('treat')).length, 1, 'lời nhắn bị chặn không tạo thông báo');
+});
+
+test('ví xu & gói Cô Tư AI', async () => {
+  const a = client();
+  const r = await a('/auth/register', { username: 'vi_a', password: 'matkhau123' });
+  assert.strictEqual(r.status, 200);
+  const w = (await a('/wallet')).data;
+  assert.strictEqual(w.xu, 30);
+  assert.strictEqual(w.dailyAvailable, true);
+  assert.strictEqual((await a('/wallet/daily', {})).data.xu, 40);
+  assert.strictEqual((await a('/wallet/daily', {})).status, 409);
+  const st = (await a('/ai/status')).data;
+  assert.strictEqual(st.prices.trada, 3);
+  // Môi trường test không có khoá API -> AI tắt, không trừ xu
+  if (!st.enabled) {
+    assert.strictEqual((await a('/ai/packs', { drink: 'tragung' })).status, 503);
+    assert.strictEqual((await a('/wallet')).data.xu, 40);
+  }
 });

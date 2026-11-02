@@ -36,6 +36,20 @@ Mỗi tâm sự mới là một ly trà đá đặt lên bàn.
 Chọn tâm trạng để Cô Tư gợi ý món. Gọi xong, Cô Tư đáp lời và nhân vật cầm ly nước trên tay cho cả quán thấy.
 Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của người dùng, không gửi lên máy chủ.
 
+**🤖 Cô Tư AI – gói tâm sự theo món nước (Claude API)**
+- Gọi một món = mua một **gói tâm sự với Cô Tư AI**: 12 lượt, dùng trong 24 giờ, trả bằng **xu**. Mỗi món một "tính cách": trà đá để xả, trà gừng dịu lo âu, nước sấu gỡ rối đầu óc, cà phê đen chia việc, sữa đậu nành thương mình, nước dừa nghỉ ngơi, trà chanh chém gió cho vui, nước mía tiếp năng lượng.
+- Câu trả lời hiện ra từng chữ (streaming). Có quy tắc an toàn: không chẩn đoán, không khuyên thuốc; gặp dấu hiệu khủng hoảng thì hiện ngay đường dây nóng.
+- Ví xu: tặng 30 xu khi vào quán, nhận 10 xu miễn phí mỗi ngày, **mỗi ly được người khác mời +1 xu** (tối đa 20 xu/ngày). Chưa tích hợp nạp tiền thật.
+- Quyền riêng tư: hội thoại tự xoá 7 ngày sau khi gói hết hạn, người dùng xoá được ngay; giao diện ghi rõ tin nhắn được gửi tới Anthropic để trả lời.
+- Không có `ANTHROPIC_API_KEY` thì quán vẫn chạy bình thường, chỉ tắt phần AI (vẫn còn bài tập nhanh).
+
+**🎁 Mời nước kèm lời nhắn – có lời đáp hài hước**
+- Ở mỗi tâm sự, mọi người có thể mời 1 ly, 3 ly hoặc cả két 10 ly kèm lời nhắn. Mỗi người mời tối đa 20 ly cho một tâm sự mỗi ngày.
+- **Bộ đếm theo từng món** (🧊 101 · 🫚 3 …) trên thẻ tâm sự, trong trang tâm sự và ở "Quầy quà" của người nhận.
+- **Lời đáp vui** theo số ly đã nhận, ví dụ: *"101 ly trà đá?! Làm sao con uống hết được trời ơi 😅😅😅"*.
+- Người nhận được thông báo ngay (kèm lời nhắn, số ly, lời đáp vui, xu thưởng).
+- **Chặn lời nhắn tiêu cực** 2 lớp: bộ lọc từ khoá tiếng Việt (biết phân biệt "bạn *không* vô dụng đâu") + Claude phân loại tử tế/tiêu cực khi có khoá API. Lời nhắn bị chặn không được gửi, kèm lý do và câu gợi ý.
+
 **Tâm sự & cổ vũ**
 - Kể chuyện kèm tâm trạng (mệt mỏi, buồn, bực tức, lo âu, chán nản, áp lực), mặc định **ẩn danh hoàn toàn**.
 - Người khác bày tỏ 🫂 Đồng cảm · 💪 Cố lên · ❤️ Thương và gửi lời động viên (có gợi ý câu sẵn).
@@ -66,7 +80,10 @@ server/
   auth.js         Đăng ký, đăng nhập, phiên, hồ sơ, xoá tài khoản
   posts.js        Tâm sự, cảm xúc, bình luận, báo cáo, thông báo, quản trị
   realtime.js     Socket.IO: vị trí nhân vật, chat, biểu cảm
-  moderation.js   Lọc từ ngữ, phát hiện khủng hoảng
+  moderation.js   Lọc từ ngữ, phát hiện khủng hoảng, sàng lọc lời nhắn tiêu cực
+  ai.js           Cô Tư AI (Claude API): nhân cách theo món, stream, phân loại lời nhắn
+  aiRoutes.js     Ví xu, gói AI, chat SSE
+  funny.js        Lời đáp hài hước theo số ly nhận được
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css
@@ -74,7 +91,7 @@ public/
   js/scene3d.js   Dựng góc phố 3D: nhà ống, quán trà, cây, cột điện, xe cộ
   js/game3d.js    Engine 3D: camera, ánh sáng ngày/đêm, NPC, nhãn chữ
   js/avatar3d.js  Xem trước nhân vật 3D
-  js/menu.js      Menu nước & các hoạt động giải toả stress
+  js/menu.js      Menu nước, ví xu, chat Cô Tư AI, mời nước kèm lời nhắn
   js/world.js     Bản đồ logic: bàn, va chạm, tìm đường (dùng chung 2D/3D)
   js/game.js, js/sprites.js, js/vnart.js   Bản 2D pixel dự phòng
   js/main.js      Giao diện, API, realtime
@@ -102,7 +119,8 @@ npm test
    Script sẽ: cài Node 22, Nginx, Certbot; tạo user hệ thống `xastress`; cài vào `/opt/xastress`;
    chạy dịch vụ systemd `xastress`; cấu hình Nginx (WebSocket); bật tường lửa UFW;
    lấy chứng chỉ HTTPS Let's Encrypt; sao lưu CSDL mỗi ngày lúc 3h vào `/var/backups/xastress`.
-3. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
+3. **Bật Cô Tư AI** (tuỳ chọn): điền `ANTHROPIC_API_KEY` trong `/opt/xastress/.env` (lấy khoá ở platform.claude.com). Mặc định dùng `claude-opus-5-5`; có thể đổi `AI_MODEL` sang `claude-sonnet-5-5` hoặc `claude-haiku-5-5` để giảm chi phí. Rồi `sudo systemctl restart xastress`.
+4. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
    rồi `sudo systemctl restart xastress` và đăng nhập lại.
 
 > Ở chế độ `NODE_ENV=production`, cookie đăng nhập có cờ `Secure` nên **bắt buộc truy cập qua HTTPS**.
