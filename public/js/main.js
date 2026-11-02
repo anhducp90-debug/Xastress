@@ -1,8 +1,9 @@
 // Giao diện: đăng nhập, bảng tâm sự, bình luận, hồ sơ, realtime.
 import { Game } from './game.js';
 import { TABLES, tableById } from './world.js';
-import { drawAvatarPreview, AVATAR_OPTIONS, AVATAR_LABELS, PALETTE, HAIR_NAMES, HAT_NAMES } from './sprites.js';
+import { drawAvatarPreview as drawAvatar2D, AVATAR_OPTIONS, AVATAR_LABELS, PALETTE, HAIR_NAMES, HAT_NAMES } from './sprites.js';
 
+let drawAvatarPreview = drawAvatar2D;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
@@ -658,12 +659,30 @@ $('.emotes').onclick = (e) => {
 };
 
 // ---------- Khởi động ----------
-game = new Game($('#game'), {
-  onMove: (m) => socket && socket.connected && socket.volatile.emit('move', m),
-  onTable: (id) => openTable(id),
-  onNpc: () => openNpc(false),
-  isUiOpen: isModalOpen,
-});
-window.__game = game; // tiện debug trên console
-setupAuth();
-api('/auth/me').then(({ user }) => (user ? enter(user, false) : showAuth())).catch(showAuth);
+function hasWebGL() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch { return false; }
+}
+async function boot() {
+  let GameClass = Game;
+  // Mặc định 3D; thêm ?2d vào URL để dùng bản 2D nhẹ cho máy yếu
+  if (hasWebGL() && !new URLSearchParams(location.search).has('2d')) {
+    try {
+      const [g3, a3] = await Promise.all([import('./game3d.js'), import('./avatar3d.js')]);
+      GameClass = g3.Game3D;
+      drawAvatarPreview = a3.drawAvatar3D;
+    } catch (err) { console.warn('Không tải được 3D, dùng bản 2D', err); }
+  }
+  game = new GameClass($('#game'), {
+    onMove: (m) => socket && socket.connected && socket.volatile.emit('move', m),
+    onTable: (id) => openTable(id),
+    onNpc: () => openNpc(false),
+    isUiOpen: isModalOpen,
+  });
+  window.__game = game; // tiện debug trên console
+  setupAuth();
+  api('/auth/me').then(({ user }) => (user ? enter(user, false) : showAuth())).catch(showAuth);
+}
+boot();

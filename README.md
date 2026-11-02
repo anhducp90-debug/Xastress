@@ -1,14 +1,18 @@
 # ☕ Trà Đá Xả Stress — xastress.info.vn
 
-Quán trà đá vỉa hè online theo phong cách game 2D pixel (kiểu nông trại vui vẻ).
+Quán trà đá vỉa hè online trong một **góc phố Việt Nam 3D** (WebGL), phong cách hoạt hình low‑poly ấm áp.
 Mọi người vào quán với **một danh tính riêng, ẩn danh**, ngồi vào các bàn theo chủ đề để
 kể chuyện ức chế về công việc, gia đình, tình cảm, học hành, tiền bạc, cuộc sống…
 và nhận về sự **đồng cảm, chia sẻ, cổ vũ** từ những người khác.
 
 ## Tính năng
 
-**Không gian quán (2D, realtime)**
-- Phố nhà ống Hà Nội/Sài Gòn, vỉa hè lát gạch, cây bàng lá đỏ rơi, dây bóng đèn, ghế nhựa xanh đỏ, xe máy chạy ngoài đường, mèo vàng đi lang thang.
+**Không gian quán (3D, realtime)**
+- Dãy nhà ống cửa chớp xanh, ban công hoa giấy, cờ đỏ sao vàng bay, bồn nước inox; biển hiệu tạp hoá, sửa xe – vá xe, cắt tóc, phở bò, cơm bình dân.
+- Vỉa hè gạch đỏ, gốc cây quét vôi, cây bàng và phượng vĩ rụng lá/hoa, cột điện dây chằng chịt, đèn cao áp, dây bóng đèn tròn, ghế nhựa xanh đỏ.
+- Cô gánh hàng rong rao hàng, bác xe ôm đội mũ cối, xe máy chở người/hàng/hoa, xe đạp chở hoa, nồi phở bốc khói, mèo vàng.
+- Nhân vật 3D chibi tự thiết kế (da, tóc, áo, quần, nón lá/mũ), có dáng đi, ngồi ghế nhựa; camera bám theo, lăn chuột hoặc chụm 2 ngón để phóng to/thu nhỏ.
+- Máy không hỗ trợ WebGL tự chuyển sang bản 2D pixel nhẹ; có thể ép dùng 2D bằng cách mở `https://xastress.info.vn/?2d`.
 - **Cô Tư chủ quán** (đội nón lá) đứng ở quầy với ấm trà, phích đỏ, lọ kẹo lạc. Có thể trò chuyện, nghe lời an ủi, tập **thở cùng cô** (hít 4 – giữ 4 – thở 6).
 - **Ngày / đêm theo giờ Việt Nam**: tối đến đèn đường, đèn dây, cửa sổ các nhà sáng lên.
 - Thấy những người khác đi lại, ngồi ghế; chat bong bóng và biểu cảm (👋 🤗 ❤️ 💪 🍵).
@@ -39,7 +43,7 @@ Mỗi tâm sự mới là một ly trà đá đặt lên bàn.
 ## Công nghệ
 
 - **Backend:** Node.js ≥ 20, Express 5, Socket.IO 4, SQLite (better-sqlite3, chế độ WAL).
-- **Frontend:** HTML/CSS/JS thuần (ES modules), Canvas 2D. Toàn bộ pixel‑art được **vẽ bằng code** — không cần file ảnh, không phụ thuộc CDN.
+- **Frontend:** HTML/CSS/JS thuần (ES modules) + **Three.js** (phục vụ từ `node_modules`, không phụ thuộc CDN). Toàn bộ mô hình 3D và bản 2D dự phòng được **dựng bằng code** — không cần file ảnh/mô hình ngoài.
 
 ```
 server/
@@ -51,9 +55,12 @@ server/
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css
-  js/sprites.js   Pixel-art nhân vật & đồ vật
-  js/world.js     Bản đồ quán, va chạm, tìm đường
-  js/game.js      Vòng lặp game, camera, ngày/đêm
+  js/char3d.js    Nhân vật 3D chibi, vật liệu dùng chung
+  js/scene3d.js   Dựng góc phố 3D: nhà ống, quán trà, cây, cột điện, xe cộ
+  js/game3d.js    Engine 3D: camera, ánh sáng ngày/đêm, NPC, nhãn chữ
+  js/avatar3d.js  Xem trước nhân vật 3D
+  js/world.js     Bản đồ logic: bàn, va chạm, tìm đường (dùng chung 2D/3D)
+  js/game.js, js/sprites.js, js/vnart.js   Bản 2D pixel dự phòng
   js/main.js      Giao diện, API, realtime
 deploy/           Nginx, systemd, script cài VPS, sao lưu
 test/             Kiểm thử API (node --test)

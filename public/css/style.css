@@ -152,3 +152,18 @@ h3 { margin: 14px 0 6px; font-size: 16px; color: var(--wood-d); }
 @media (max-width: 720px) {
   #toasts { top: auto; bottom: 120px; right: 50%; transform: translateX(50%); }
 }
+
+/* Nhãn chữ trong không gian 3D */
+.labels3d { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+.lb { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 600; font-size: 12px; will-change: transform; }
+.lb.name { background: rgba(20, 20, 28, .62); color: #fff; padding: 1px 8px; border-radius: 99px; }
+.lb.name.me { background: rgba(46, 125, 50, .9); }
+.lb.npcname { background: rgba(122, 35, 24, .85); color: #fff4d6; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; }
+.lb.tbl { background: rgba(40, 28, 20, .6); color: #fff4d6; padding: 2px 9px; border-radius: 8px; font-size: 12px; }
+.lb.tbl.hov { background: rgba(255, 244, 214, .97); color: #5a2d14; box-shadow: 0 0 0 2px #f3c623; }
+.lb.bubble { background: #fff; color: #2b1d16; padding: 6px 10px; border-radius: 12px; font-weight: 500; font-size: 13px;
+  white-space: normal; width: max-content; max-width: 220px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,.25); }
+.lb.bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: #fff; }
+.lb.emote { font-size: 26px; }
+.lb.prompt { background: rgba(255, 244, 214, .96); color: #5a2d14; padding: 4px 10px; border-radius: 8px; font-weight: 700; font-size: 13px; box-shadow: 0 2px 0 rgba(90,45,20,.4); }
+#hud, #chatbar, #help, #toasts { z-index: 2; }

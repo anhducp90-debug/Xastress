@@ -67,6 +67,10 @@ app.use('/api', posts);
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy.' }));
 
+// Thư viện Three.js (WebGL) phục vụ trực tiếp từ node_modules – không phụ thuộc CDN
+app.use('/vendor/three', express.static(path.join(path.dirname(require.resolve('three')), '..', 'build'), {
+  maxAge: config.isProd ? '7d' : 0, index: false,
+}));
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: config.isProd ? '1h' : 0 }));
 
 // eslint-disable-next-line no-unused-vars
