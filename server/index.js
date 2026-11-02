@@ -52,7 +52,7 @@ app.use('/api', (req, res, next) => {
 app.use('/api', auth.attachUser);
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60e3, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false,
+  windowMs: 15 * 60e3, limit: parseInt(process.env.AUTH_RATE_LIMIT || '20', 10), standardHeaders: 'draft-8', legacyHeaders: false,
   message: { error: 'Thử quá nhiều lần, vui lòng đợi 15 phút.' },
 });
 
@@ -65,6 +65,7 @@ app.post('/api/auth/password', authLimiter, auth.requireUser, auth.changePasswor
 app.post('/api/auth/delete', authLimiter, auth.requireUser, auth.deleteAccount);
 app.use('/api', posts);
 app.use('/api', require('./aiRoutes'));
+app.use('/api', require('./walletRoutes'));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy.' }));
 
@@ -85,6 +86,7 @@ const server = http.createServer(app);
 realtime.init(server, { userFromToken: auth.userFromToken, cookieName: auth.COOKIE, publicUser: auth.publicUser });
 
 if (require.main === module) {
+  require('./telegram').start(); // bot bán xu (chỉ chạy khi có TELEGRAM_BOT_TOKEN)
   server.listen(config.port, config.host, () => {
     console.log(`☕ Xả Stress đang mở quán tại http://${config.host}:${config.port}`);
   });

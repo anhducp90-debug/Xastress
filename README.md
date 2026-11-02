@@ -37,17 +37,23 @@ Chọn tâm trạng để Cô Tư gợi ý món. Gọi xong, Cô Tư đáp lời
 Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của người dùng, không gửi lên máy chủ.
 
 **🤖 Cô Tư AI – gói tâm sự theo món nước (Claude API)**
-- Gọi một món = mua một **gói tâm sự với Cô Tư AI**: 12 lượt, dùng trong 24 giờ, trả bằng **xu**. Mỗi món một "tính cách": trà đá để xả, trà gừng dịu lo âu, nước sấu gỡ rối đầu óc, cà phê đen chia việc, sữa đậu nành thương mình, nước dừa nghỉ ngơi, trà chanh chém gió cho vui, nước mía tiếp năng lượng.
-- Câu trả lời hiện ra từng chữ (streaming). Có quy tắc an toàn: không chẩn đoán, không khuyên thuốc; gặp dấu hiệu khủng hoảng thì hiện ngay đường dây nóng.
-- Ví xu: tặng 30 xu khi vào quán, nhận 10 xu miễn phí mỗi ngày, **mỗi ly được người khác mời +1 xu** (tối đa 20 xu/ngày). Chưa tích hợp nạp tiền thật.
-- Quyền riêng tư: hội thoại tự xoá 7 ngày sau khi gói hết hạn, người dùng xoá được ngay; giao diện ghi rõ tin nhắn được gửi tới Anthropic để trả lời.
-- Không có `ANTHROPIC_API_KEY` thì quán vẫn chạy bình thường, chỉ tắt phần AI (vẫn còn bài tập nhanh).
+- Uống một ly = mở **gói tâm sự với Cô Tư AI**: 12 lượt, dùng trong 24 giờ. Mỗi món một "tính cách": trà đá để xả, trà gừng dịu lo âu, nước sấu gỡ rối, cà phê đen chia việc, sữa đậu nành thương mình, nước dừa nghỉ ngơi, trà chanh chém gió, nước mía tiếp năng lượng.
+- Trả lời từng chữ (streaming), có quy tắc an toàn và thẻ đường dây nóng khi có dấu hiệu khủng hoảng. Hội thoại tự xoá 7 ngày sau khi hết hạn, xoá được ngay.
+- Không có `ANTHROPIC_API_KEY` thì quán vẫn chạy, chỉ tắt phần AI (vẫn còn bài tập nhanh).
+
+**🧺 Khay nước, phiếu chào mừng, xu & thu phí**
+- **Khách mới**: 1 phiếu *ly cho mình* + 1 phiếu *ly để tặng*.
+- **Khay nước**: ly người khác tặng nằm trong khay – **uống** (mở gói Cô Tư AI) hoặc **tặng lại** cho người khác.
+- Mỗi lần uống/tặng, quán trả theo thứ tự: **ly cùng món trong khay → miễn phí (khi chưa thu phí) → phiếu chào mừng → xu**. Trước khi bấm, giao diện báo rõ sẽ trả bằng gì.
+- **Hiện tại hoàn toàn miễn phí.** Khi quán đủ **200 khách** (`PAYWALL_USERS`), tự động bắt đầu tính phí; thanh thực đơn hiển thị tiến độ "x/200 khách". `PAYWALL_MODE=on|off` để bật/tắt thủ công.
+- **Mua xu qua bot Telegram**, thanh toán bằng **Telegram Stars ⭐** (Telegram bắt buộc dùng Stars cho hàng hoá số trong bot). Web tạo mã liên kết dùng một lần → mở bot → chọn gói → thanh toán → xu tự vào ví và web báo ngay. Mỗi giao dịch chỉ cộng xu một lần. Bot chỉ bán khi đã bắt đầu thu phí. Lệnh: `/mua`, `/vi`, `/huy`, `/paysupport`, `/terms`.
+- Giá món (xu) và gói xu (số ⭐) chỉnh trong `server/constants.js` (`DRINK_INFO`, `XU_PACKAGES`).
 
 **🎁 Mời nước kèm lời nhắn – có lời đáp hài hước**
 - Ở mỗi tâm sự, mọi người có thể mời 1 ly, 3 ly hoặc cả két 10 ly kèm lời nhắn. Mỗi người mời tối đa 20 ly cho một tâm sự mỗi ngày.
 - **Bộ đếm theo từng món** (🧊 101 · 🫚 3 …) trên thẻ tâm sự, trong trang tâm sự và ở "Quầy quà" của người nhận.
 - **Lời đáp vui** theo số ly đã nhận, ví dụ: *"101 ly trà đá?! Làm sao con uống hết được trời ơi 😅😅😅"*.
-- Người nhận được thông báo ngay (kèm lời nhắn, số ly, lời đáp vui, xu thưởng).
+- Người nhận được thông báo ngay (kèm lời nhắn, số ly, lời đáp vui); ly được mời vào khay của họ.
 - **Chặn lời nhắn tiêu cực** 2 lớp: bộ lọc từ khoá tiếng Việt (biết phân biệt "bạn *không* vô dụng đâu") + Claude phân loại tử tế/tiêu cực khi có khoá API. Lời nhắn bị chặn không được gửi, kèm lý do và câu gợi ý.
 
 **Tâm sự & cổ vũ**
@@ -84,6 +90,9 @@ server/
   ai.js           Cô Tư AI (Claude API): nhân cách theo món, stream, phân loại lời nhắn
   aiRoutes.js     Ví xu, gói AI, chat SSE
   funny.js        Lời đáp hài hước theo số ly nhận được
+  economy.js      Khay nước, phiếu, xu, ngưỡng thu phí 200 khách
+  telegram.js     Bot Telegram bán xu bằng Telegram Stars
+  walletRoutes.js API ví, báo giá, liên kết Telegram
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css
@@ -120,7 +129,8 @@ npm test
    chạy dịch vụ systemd `xastress`; cấu hình Nginx (WebSocket); bật tường lửa UFW;
    lấy chứng chỉ HTTPS Let's Encrypt; sao lưu CSDL mỗi ngày lúc 3h vào `/var/backups/xastress`.
 3. **Bật Cô Tư AI** (tuỳ chọn): điền `ANTHROPIC_API_KEY` trong `/opt/xastress/.env` (lấy khoá ở platform.claude.com). Mặc định dùng `claude-opus-5-5`; có thể đổi `AI_MODEL` sang `claude-sonnet-5-5` hoặc `claude-haiku-5-5` để giảm chi phí. Rồi `sudo systemctl restart xastress`.
-4. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
+4. **Bot Telegram bán xu** (cần trước khi đủ 200 khách): nhắn @BotFather → `/newbot` → lấy token → điền `TELEGRAM_BOT_TOKEN` và `TELEGRAM_BOT_USERNAME` trong `.env`, sửa `TELEGRAM_SUPPORT`, rồi khởi động lại. Bot chạy kiểu long polling nên không cần mở thêm cổng. Telegram Stars không cần đăng ký cổng thanh toán; Stars thu được rút qua Fragment theo quy định của Telegram.
+5. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
    rồi `sudo systemctl restart xastress` và đăng nhập lại.
 
 > Ở chế độ `NODE_ENV=production`, cookie đăng nhập có cờ `Secure` nên **bắt buộc truy cập qua HTTPS**.

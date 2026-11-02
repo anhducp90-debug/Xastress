@@ -275,3 +275,14 @@ textarea.pour { animation: pour 1.3s ease-in forwards; }
 .tnote { font-size: 14px; background: #fff; border-radius: 8px; padding: 4px 8px; }
 .tnote small, .notif-msg { color: var(--muted); }
 .notif-msg { font-size: 14px; color: var(--ink); margin: 2px 0; }
+
+/* ===== Ví mới: miễn phí / phiếu / khay / mua xu Telegram ===== */
+.wallet-box { display: grid; gap: 6px; margin: 4px 0 8px; }
+.wallet-box .tag { color: #cfe0c8; }
+.wallet.free { flex-direction: column; gap: 0; border-radius: 12px; text-align: center; background: rgba(243,198,35,.18); }
+.tray { text-align: center; color: #fff8e0; font-size: 14px; display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.tray .tchip { background: rgba(255,255,255,.85); color: #3a2216; }
+.need-xu { margin: 8px auto; display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; font-weight: 600; color: var(--red-d); }
+.pay-note { margin: 0; font-size: 13.5px; color: var(--green); font-weight: 600; }
+.pay-note.warn { color: var(--red); }
+a.btn { text-decoration: none; }

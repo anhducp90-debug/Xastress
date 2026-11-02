@@ -4,16 +4,13 @@ const express = require('express');
 const db = require('./db');
 const ai = require('./ai');
 const { DRINK_INFO, ECONOMY } = require('./constants');
+const economy = require('./economy');
 const { requireUser } = require('./auth');
 const { clean, hasCrisisSignal } = require('./moderation');
 const { hit } = require('./ratelimit');
 
 const router = express.Router();
 const q = {
-  wallet: db.prepare('SELECT xu, last_daily FROM users WHERE id = ?'),
-  setDaily: db.prepare('UPDATE users SET xu = xu + ?, last_daily = ? WHERE id = ? AND last_daily != ?'),
-  spend: db.prepare('UPDATE users SET xu = xu - ? WHERE id = ? AND xu >= ?'),
-  refundXu: db.prepare('UPDATE users SET xu = xu + ? WHERE id = ?'),
   activePacks: db.prepare('SELECT * FROM ai_packs WHERE user_id = ? AND expires_at > ? AND turns_left > 0 ORDER BY id DESC'),
   activeDrink: db.prepare('SELECT * FROM ai_packs WHERE user_id = ? AND drink = ? AND expires_at > ? AND turns_left > 0 ORDER BY id DESC LIMIT 1'),
   pack: db.prepare('SELECT * FROM ai_packs WHERE id = ? AND user_id = ?'),
@@ -27,44 +24,35 @@ const q = {
   delMsg: db.prepare('DELETE FROM ai_messages WHERE id = ?'),
 };
 
-// Ngày theo giờ Việt Nam, để nhận xu miễn phí mỗi ngày
-const vnDay = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 const int = (v) => { const n = parseInt(v, 10); return Number.isSafeInteger(n) && n > 0 ? n : null; };
 const shapePack = (p) => ({ id: p.id, drink: p.drink, turnsLeft: p.turns_left, expiresAt: p.expires_at });
 
-router.get('/ai/status', (_req, res) => res.json({ enabled: ai.isEnabled(), prices: Object.fromEntries(Object.entries(DRINK_INFO).map(([k, v]) => [k, v.price])), turns: ECONOMY.packTurns, hours: ECONOMY.packHours }));
+router.get('/ai/status', (_req, res) => res.json({ enabled: ai.isEnabled(), turns: ECONOMY.packTurns, hours: ECONOMY.packHours, ...economy.status() }));
 
-router.get('/wallet', requireUser, (req, res) => {
-  const w = q.wallet.get(req.user.id);
-  res.json({
-    xu: w.xu, dailyAvailable: w.last_daily !== vnDay(), dailyXu: ECONOMY.dailyXu,
-    packs: q.activePacks.all(req.user.id, Date.now()).map(shapePack),
-  });
+router.get('/ai/packs', requireUser, (req, res) => {
+  res.json({ packs: q.activePacks.all(req.user.id, Date.now()).map(shapePack) });
 });
 
-router.post('/wallet/daily', requireUser, (req, res) => {
-  const day = vnDay();
-  const r = q.setDaily.run(ECONOMY.dailyXu, day, req.user.id, day);
-  if (!r.changes) return res.status(409).json({ error: 'Hôm nay bạn nhận xu rồi, mai ghé quán nhận tiếp nha.' });
-  res.json({ xu: q.wallet.get(req.user.id).xu, added: ECONOMY.dailyXu });
-});
-
-// Gọi món = mua gói Cô Tư AI (đang có gói cùng món còn hạn thì dùng tiếp, không trừ xu)
+// Gọi món = mở gói Cô Tư AI. Trả bằng: ly trong khay -> miễn phí (chưa thu phí) -> phiếu -> xu.
+// Đang có gói cùng món còn hạn thì dùng tiếp, không tính thêm.
 router.post('/ai/packs', requireUser, (req, res) => {
   const { drink } = req.body || {};
-  const info = DRINK_INFO[drink];
-  if (!info) return res.status(400).json({ error: 'Quán không có món này.' });
+  if (!DRINK_INFO[drink]) return res.status(400).json({ error: 'Quán không có món này.' });
   if (!ai.isEnabled()) return res.status(503).json({ error: 'Cô Tư AI đang nghỉ, bạn dùng các bài tập nhanh trong menu nhé.', aiDisabled: true });
   const now = Date.now();
   const existing = q.activeDrink.get(req.user.id, drink, now);
-  if (existing) return res.json({ pack: shapePack(existing), charged: 0, xu: q.wallet.get(req.user.id).xu });
-  const buy = db.transaction(() => {
-    if (!q.spend.run(info.price, req.user.id, info.price).changes) return null;
-    return q.insertPack.run(req.user.id, drink, ECONOMY.packTurns, now + ECONOMY.packHours * 3600e3, now).lastInsertRowid;
-  });
-  const id = buy();
-  if (!id) return res.status(402).json({ error: `Ví chưa đủ ${info.price} xu. Nhận xu miễn phí mỗi ngày, hoặc được người khác mời nước cũng có xu nhé!`, needXu: info.price });
-  res.json({ pack: shapePack(q.pack.get(id, req.user.id)), charged: info.price, xu: q.wallet.get(req.user.id).xu });
+  if (existing) return res.json({ pack: shapePack(existing), paid: null, wallet: economy.wallet(req.user.id) });
+  try {
+    const { id, plan } = db.transaction(() => {
+      const pl = economy.pay(req.user.id, drink, 1, 'self');
+      const pid = q.insertPack.run(req.user.id, drink, ECONOMY.packTurns, now + ECONOMY.packHours * 3600e3, now).lastInsertRowid;
+      return { id: pid, plan: pl };
+    })();
+    res.json({ pack: shapePack(q.pack.get(id, req.user.id)), paid: economy.describe(plan), wallet: economy.wallet(req.user.id) });
+  } catch (err) {
+    if (err instanceof economy.NeedXu) return res.status(402).json({ error: `Ly này giá ${err.cost} xu, ví đang có ${err.have} xu.`, needXu: err.cost, xu: err.have });
+    throw err;
+  }
 });
 
 router.get('/ai/packs/:id', requireUser, (req, res) => {

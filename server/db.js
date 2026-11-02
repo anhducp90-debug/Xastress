@@ -84,6 +84,36 @@ CREATE TABLE IF NOT EXISTS treats (
 );
 CREATE INDEX IF NOT EXISTS idx_treats_post ON treats(post_id);
 CREATE INDEX IF NOT EXISTS idx_treats_to ON treats(to_user, created_at DESC);
+-- Khay nước: những ly mỗi người đang có (được tặng) để uống hoặc tặng lại
+CREATE TABLE IF NOT EXISTS cups (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  drink       TEXT NOT NULL,
+  qty         INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, drink)
+);
+-- Liên kết tài khoản quán với Telegram (để mua xu qua bot)
+CREATE TABLE IF NOT EXISTS tg_links (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tg_user_id  INTEGER NOT NULL UNIQUE,
+  tg_chat_id  INTEGER NOT NULL,
+  linked_at   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tg_codes (
+  code        TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  INTEGER NOT NULL
+);
+-- Lịch sử thanh toán Telegram Stars (charge_id duy nhất -> không cộng xu hai lần)
+CREATE TABLE IF NOT EXISTS payments (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  tg_user_id  INTEGER NOT NULL,
+  package     TEXT NOT NULL,
+  xu          INTEGER NOT NULL,
+  stars       INTEGER NOT NULL,
+  charge_id   TEXT NOT NULL UNIQUE,
+  created_at  INTEGER NOT NULL
+);
 -- Gói AI tâm sự mua bằng xu theo món nước
 CREATE TABLE IF NOT EXISTS ai_packs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,8 +139,10 @@ function addColumn(table, col, def) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
 }
-addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 30');       // ví xu, tặng 30 xu khi vào quán
-addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");   // ngày nhận xu miễn phí gần nhất
+addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 0');          // ví xu (mua qua bot Telegram)
+addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");    // (cũ, không dùng nữa)
+addColumn('users', 'voucher_self', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí cho mình
+addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí để tặng
 addColumn('notifications', 'message', "TEXT NOT NULL DEFAULT ''");
 addColumn('notifications', 'qty', 'INTEGER NOT NULL DEFAULT 1');
 
@@ -119,6 +151,7 @@ const purgeAi = db.prepare('DELETE FROM ai_packs WHERE expires_at < ?');
 
 // Dọn phiên hết hạn định kỳ
 const purge = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
-setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); }, 60 * 60 * 1000).unref();
+const purgeCodes = db.prepare('DELETE FROM tg_codes WHERE expires_at < ?');
+setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); purgeCodes.run(Date.now()); }, 60 * 60 * 1000).unref();
 
 module.exports = db;

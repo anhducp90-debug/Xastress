@@ -84,25 +84,51 @@ export function createMenu(ctx) {
     return aiStatus;
   };
 
-  // ---------- Ví xu ----------
+  // ---------- Ví: miễn phí / phiếu / xu / khay ----------
+  const trayChips = (tray) => Object.entries(tray || {}).filter(([, n]) => n > 0)
+    .map(([k, n]) => html`<span class="tchip">${drinkById[k] ? drinkById[k].icon : '🍵'}×${n}</span>`);
   function walletBar(w) {
-    return html`<div class="wallet">
-      <span>👛 Ví của bạn: <b id="xuNow">${w.xu}</b> xu</span>
-      ${w.dailyAvailable ? html`<button type="button" class="btn small green" id="claimDaily">🎁 Nhận ${w.dailyXu} xu hôm nay</button>` : html`<span class="tag">Đã nhận xu hôm nay ✓</span>`}
+    const e = w.economy;
+    const hasTray = Object.values(w.tray).some((n) => n > 0);
+    return html`<div class="wallet-box">
+      ${e.paywall
+        ? html`<div class="wallet"><span>👛 <b id="xuNow">${w.xu}</b> xu</span>
+            <span>🎟️ Phiếu: ${w.vouchers.self} ly cho mình · ${w.vouchers.gift} ly để tặng</span>
+            ${w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : ''}</div>`
+        : html`<div class="wallet free"><span>🎉 Quán đang <b>miễn phí</b> cho mọi người</span>
+            <span class="tag">${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí</span></div>
+            <div class="tag center">Bạn đang giữ phiếu chào mừng: ${w.vouchers.self} ly cho mình + ${w.vouchers.gift} ly để tặng (dùng khi quán tính phí).</div>`}
+      ${hasTray ? html`<div class="tray">🧺 Khay của bạn: ${trayChips(w.tray)} <span class="tag">– uống hoặc tặng lại</span></div>` : ''}
     </div>`;
   }
-  function bindWallet() {
-    const b = $('#claimDaily');
-    if (b) b.onclick = async () => {
-      try { const r = await api('/wallet/daily', { body: {} }); toast(`+${r.added} xu! Cô Tư lì xì nè 🧧`); $('#xuNow').textContent = r.xu; b.replaceWith(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'Đã nhận xu hôm nay ✓' })); }
-      catch (err) { toast(err.message, true); }
-    };
+  // Mở bot Telegram để mua xu (mã liên kết dùng một lần)
+  async function buyXu(btn) {
+    btn.disabled = true;
+    try {
+      const r = await api('/telegram/link', { body: {} });
+      const a = document.createElement('a');
+      a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'btn small green';
+      a.textContent = '➡️ Mở bot Telegram để mua xu';
+      btn.replaceWith(a);
+      window.open(r.url, '_blank', 'noopener');
+      toast('Mở bot Telegram, chọn gói xu và thanh toán bằng ⭐ Stars. Xu sẽ tự vào ví 👛');
+    } catch (err) { toast(err.message, true); btn.disabled = false; }
   }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-buyxu]'); if (b) { e.preventDefault(); buyXu(b); } });
+  const needXuHtml = (w, need) => html`<div class="need-xu">Cần ${need} xu, ví đang có ${w.xu} xu.
+    ${w.telegram && w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : html`<span class="tag">Quán chưa mở bán xu.</span>`}</div>`;
+  const quote = (drink, purpose, qty = 1) => api(`/wallet/quote?drink=${drink}&purpose=${purpose}&qty=${qty}`);
 
   async function openMenu(mood) {
     const rec = mood && MOOD_PICK[mood] ? MOOD_PICK[mood].drinks : [];
-    const [st, w] = await Promise.all([getStatus(), api('/wallet').catch(() => null)]);
-    const active = new Set((w ? w.packs : []).map((p) => p.drink));
+    const [st, w, pk] = await Promise.all([getStatus(), api('/wallet').catch(() => null), api('/ai/packs').catch(() => ({ packs: [] }))]);
+    const active = new Set(pk.packs.map((p) => p.drink));
+    const priceOf = (d) => {
+      const n = w && w.tray[d.id];
+      if (n) return `Có ×${n} trong khay`;
+      if (w && !w.economy.paywall) return 'Miễn phí';
+      return `${st.prices[d.id]} xu`;
+    };
     openModal(html`
       <div class="menu-board">
         <h2 class="chalk-title">🍵 Thực đơn quán Cô Tư</h2>
@@ -116,12 +142,11 @@ export function createMenu(ctx) {
             ${rec.includes(d.id) ? html`<span class="rec-badge">Cô gợi ý</span>` : active.has(d.id) ? html`<span class="rec-badge own">Đang uống</span>` : ''}
             <span class="mi-icon">${d.icon}</span>
             <span class="mi-name">${d.name}</span>
-            <span class="mi-price">${st.enabled ? `${st.prices[d.id]} xu` : d.price}</span>
+            <span class="mi-price">${priceOf(d)}</span>
             <span class="mi-tag">${d.tag}</span>
           </button>`)}</div>
-        <p class="chalk-foot">Xu nhận miễn phí mỗi ngày, và mỗi ly người khác mời bạn cũng được +1 xu 🎁 · Bài tập nhanh luôn miễn phí.</p>
+        <p class="chalk-foot">Ly được người khác tặng nằm trong khay: uống hoặc tặng lại cho người khác 🔁 · Bài tập nhanh luôn miễn phí.</p>
       </div>`, 'menu');
-    bindWallet();
     $('#modalBody').onclick = (e) => {
       const m = e.target.closest('[data-mood]');
       if (m) return openMenu(m.dataset.mood === mood ? null : m.dataset.mood);
@@ -159,22 +184,20 @@ export function createMenu(ctx) {
       box.innerHTML = html`<div class="done-box">🌙 Cô Tư AI đang nghỉ (quán chưa bật AI). Bạn dùng <b>Bài tập nhanh</b> hoặc kể chuyện ở các bàn nhé.</div>`.s;
       return;
     }
-    const w = await api('/wallet');
-    const pack = w.packs.find((p) => p.drink === drink);
+    const [w, pk, qt] = await Promise.all([api('/wallet'), api('/ai/packs'), quote(drink, 'self')]);
+    const pack = pk.packs.find((p) => p.drink === drink);
     if (!pack) {
-      const price = st.prices[drink];
       box.innerHTML = html`
         <div class="ai-buy">
           <p>Ly này kèm <b>${st.turns} lượt tâm sự</b> với Cô Tư AI, dùng trong <b>${st.hours} giờ</b>.</p>
-          <p class="tag">Ví hiện có <b>${w.xu}</b> xu.</p>
-          <button class="btn big warm" id="buyPack" ${w.xu < price ? raw('disabled') : ''}>🧋 Gọi ly này – ${price} xu</button>
-          ${w.xu < price ? html`<p class="tag">Chưa đủ xu. ${w.dailyAvailable ? 'Nhận xu miễn phí hôm nay ở thực đơn nhé!' : 'Mai nhận thêm xu, hoặc được mọi người mời nước cũng có xu.'}</p>` : ''}
+          <button class="btn big warm" id="buyPack" ${qt.enough ? '' : raw('disabled')}>🧋 Gọi ly này – trả bằng ${qt.text}</button>
+          ${qt.enough ? '' : needXuHtml(w, qt.xu)}
           ${PRIVACY}
         </div>`.s;
       const b = $('#buyPack');
       if (b) b.onclick = async () => {
         b.disabled = true;
-        try { const r = await api('/ai/packs', { body: { drink } }); if (r.charged) toast(`Đã trả ${r.charged} xu. Cô Tư mang nước ra đây!`); aiChat(r.pack); }
+        try { const r = await api('/ai/packs', { body: { drink } }); if (r.paid) toast(`Đã trả bằng ${r.paid}. Cô Tư mang nước ra đây!`); aiChat(r.pack); }
         catch (err) { toast(err.message, true); b.disabled = false; }
       };
       return;
@@ -268,12 +291,23 @@ export function createMenu(ctx) {
           <div class="qty-pick">Mời <label><input type="radio" name="qty" value="1" checked><span>1 ly</span></label><label><input type="radio" name="qty" value="3"><span>3 ly</span></label><label><input type="radio" name="qty" value="10"><span>Cả két 10 ly 🎉</span></label></div>
           <input name="message" maxlength="200" placeholder="Lời nhắn kèm ly nước (tuỳ chọn) – tử tế thôi nha 💛">
           <div class="suggest">${KIND_LINES.map((l) => html`<button type="button" data-s="${l}">${l}</button>`)}</div>
+          <p class="pay-note" data-pay></p>
           <p class="err" data-err></p>
           <button class="btn warm" type="submit">🎁 Mời</button>
         </form>`,
       bind: () => {
         const f = document.getElementById(id);
         f.querySelector('.suggest').onclick = (e) => { const b = e.target.closest('[data-s]'); if (b) f.message.value = b.dataset.s; };
+        const note = f.querySelector('[data-pay]');
+        const refresh = async () => {
+          try {
+            const qt = await quote(pickDrink ? f.drink.value : drinkId, 'gift', Number(f.qty.value));
+            note.textContent = qt.enough ? `Trả bằng: ${qt.text}${qt.cups ? ' (tặng lại ly bạn được tặng 🔁)' : ''}` : `Cần ${qt.xu} xu – ví đang có ${qt.balance} xu.`;
+            note.classList.toggle('warn', !qt.enough);
+          } catch { note.textContent = ''; }
+        };
+        f.onchange = (e) => { if (e.target.name === 'drink' || e.target.name === 'qty') refresh(); };
+        refresh();
         f.onsubmit = async (e) => {
           e.preventDefault();
           const err = f.querySelector('[data-err]'); err.textContent = '';
@@ -287,6 +321,12 @@ export function createMenu(ctx) {
             err.textContent = ex.data && ex.data.blocked
               ? `🙅 ${ex.message} ${ex.data.reason || ''} Thử một câu gợi ý bên dưới nhé 👇`
               : ex.message;
+            if (ex.status === 402) {
+              err.textContent = '';
+              const old = f.querySelector('.need-xu'); if (old) old.remove();
+              const w = await api('/wallet').catch(() => null);
+              if (w) err.insertAdjacentHTML('afterend', needXuHtml(w, ex.data.needXu).s);
+            }
             btn.disabled = false;
           }
         };
@@ -297,6 +337,7 @@ export function createMenu(ctx) {
     const d = drinkById[drink];
     return html`<div class="treat-done">
       <div class="td-head">🎉 Đã mời ${qty} ly ${d.name.toLowerCase()} ${d.icon}</div>
+      ${r.paid ? html`<small class="tag">Trả bằng: ${r.paid}. Ly đã vào khay người nhận – họ có thể uống hoặc tặng lại.</small>` : ''}
       <div class="reply-bubble"><b>Người được mời:</b> “${r.reply}”</div>
       <div class="counters">${raw(treatChips(r.treats))}</div>
       <small class="tag">Lời đáp vui do quán tự tạo theo số ly người ấy đã nhận.</small>
@@ -305,7 +346,7 @@ export function createMenu(ctx) {
 
   async function giftPanel(drinkId) {
     const box = $('#activity');
-    box.innerHTML = html`<p class="tag">Chọn một người đang cần động viên, mời họ ly ${drinkById[drinkId].name.toLowerCase()} kèm lời nhắn. Họ nhận thông báo, và mỗi ly giúp họ có thêm xu gọi Cô Tư AI.</p><div id="giftList"><p class="empty">Đang xem ai cần một ly nước…</p></div>`.s;
+    box.innerHTML = html`<p class="tag">Chọn một người đang cần động viên, mời họ ly ${drinkById[drinkId].name.toLowerCase()} kèm lời nhắn. Ly sẽ vào khay của họ để uống (gói Cô Tư AI) hoặc tặng lại người khác.</p><div id="giftList"><p class="empty">Đang xem ai cần một ly nước…</p></div>`.s;
     try {
       const { posts } = await api('/posts?limit=30');
       const need = posts.filter((p) => !p.isMine && !p.resolved).slice(0, 12);

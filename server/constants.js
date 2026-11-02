@@ -23,10 +23,16 @@ const DRINK_INFO = {
 };
 const DRINKS = Object.keys(DRINK_INFO);
 const ECONOMY = {
-  welcomeXu: 30, dailyXu: 10, xuPerTreatReceived: 1, xuFromTreatsPerDay: 20,
-  packTurns: 12, packHours: 24,
+  packTurns: 12, packHours: 24, // một ly = gói 12 lượt tâm sự với Cô Tư AI trong 24 giờ
+  welcomeSelf: 1, welcomeGift: 1, // khách mới: 1 ly miễn phí cho mình + 1 ly để tặng
 };
+// Gói xu bán qua bot Telegram, thanh toán bằng Telegram Stars (XTR)
+const XU_PACKAGES = [
+  { id: 'nho', xu: 20, stars: 15, label: '20 xu' },
+  { id: 'vua', xu: 60, stars: 40, label: '60 xu (+20%)' },
+  { id: 'to', xu: 150, stars: 90, label: '150 xu (+40%)' },
+];
 const AVATAR = {
   skin: 4, hairColor: 6, hairStyle: 4, shirt: 8, pants: 4, hat: 3,
 };
-module.exports = { TABLES, MOODS, REACTIONS, DRINKS, DRINK_INFO, ECONOMY, AVATAR };
+module.exports = { TABLES, MOODS, REACTIONS, DRINKS, DRINK_INFO, ECONOMY, XU_PACKAGES, AVATAR };

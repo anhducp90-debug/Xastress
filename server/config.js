@@ -21,6 +21,18 @@ module.exports = {
   adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   trustProxy: env.TRUST_PROXY === '1',
   sessionDays: 30,
+  // Thu phí bật khi quán có đủ PAYWALL_USERS người tham gia (mặc định 200).
+  // PAYWALL_MODE=auto (theo số người) | on (bật ngay) | off (miễn phí mãi)
+  paywall: {
+    users: parseInt(env.PAYWALL_USERS || '200', 10),
+    mode: ['on', 'off'].includes(env.PAYWALL_MODE) ? env.PAYWALL_MODE : 'auto',
+  },
+  telegram: {
+    token: env.TELEGRAM_BOT_TOKEN || '',
+    username: (env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, ''),
+    apiBase: env.TELEGRAM_API_BASE || 'https://api.telegram.org',
+    support: env.TELEGRAM_SUPPORT || 'Nhắn tin cho quản trị viên quán qua bot này, ghi rõ mã giao dịch.',
+  },
   ai: {
     // Có ANTHROPIC_API_KEY (hoặc ANTHROPIC_AUTH_TOKEN) thì bật Cô Tư AI; đặt AI_ENABLED=0 để tắt hẳn
     enabled: !!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) && env.AI_ENABLED !== '0',

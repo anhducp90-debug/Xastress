@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const config = require('./config');
-const { AVATAR } = require('./constants');
+const { AVATAR, ECONOMY } = require('./constants');
 const { clean, maskBadWords } = require('./moderation');
 
 const COOKIE = 'xs_sid';
@@ -104,6 +104,9 @@ function register(req, res) {
   const isAdmin = config.adminUsernames.includes(username.toLowerCase()) ? 1 : 0;
   const hash = bcrypt.hashSync(password, 11);
   const info = q.insertUser.run(username, hash, nick, JSON.stringify(sanitizeAvatar(avatar)), isAdmin, Date.now());
+  // Khách mới: ví 0 xu + 1 phiếu ly cho mình + 1 phiếu ly để tặng
+  db.prepare('UPDATE users SET xu = 0, voucher_self = ?, voucher_gift = ? WHERE id = ?').run(ECONOMY.welcomeSelf, ECONOMY.welcomeGift, info.lastInsertRowid);
+  require('./economy').resetCache();
   createSession(res, info.lastInsertRowid);
   res.json({ user: publicUser(q.userById.get(info.lastInsertRowid)) });
 }

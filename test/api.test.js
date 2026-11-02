@@ -9,6 +9,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xastress-'));
 process.env.DB_PATH = path.join(tmp, 'test.db');
 process.env.ADMIN_USERNAMES = 'quanly';
 process.env.AI_ENABLED = '0'; // test không gọi API thật
+process.env.AUTH_RATE_LIMIT = '1000';
+process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+process.env.TELEGRAM_BOT_USERNAME = 'xastress_bot';
 const { server } = require('../server/index.js');
 const { maskBadWords, hasCrisisSignal } = require('../server/moderation');
 
@@ -140,7 +143,9 @@ test('mời nước: 101 ly trà đá, lời đáp hài hước, bộ đếm the
   assert.ok(notifs.some((n) => n.kind === 'treat:trada' && n.qty === 10 && n.message === 'Cố lên bạn ơi, mình hiểu mà'));
   const mine = (await a('/me/treats')).data;
   assert.strictEqual(mine.treats.counts.trada, 101);
-  assert.strictEqual((await a('/wallet')).data.xu, xu0 + 20, 'người được mời nhận xu, tối đa 20 xu/ngày');
+  const w = (await a('/wallet')).data;
+  assert.deepStrictEqual(w.tray, { trada: 101, tragung: 3 }, 'ly được tặng vào khay');
+  assert.strictEqual(w.xu, xu0);
 });
 
 test('chặn lời nhắn tiêu cực kèm ly nước', async () => {
@@ -158,20 +163,83 @@ test('chặn lời nhắn tiêu cực kèm ly nước', async () => {
   assert.strictEqual((await a('/notifications')).data.items.filter((n) => n.kind.startsWith('treat')).length, 1, 'lời nhắn bị chặn không tạo thông báo');
 });
 
-test('ví xu & gói Cô Tư AI', async () => {
+test('khách mới: 0 xu, 1 phiếu ly cho mình + 1 phiếu ly để tặng; đang miễn phí thì không trừ phiếu', async () => {
   const a = client();
-  const r = await a('/auth/register', { username: 'vi_a', password: 'matkhau123' });
-  assert.strictEqual(r.status, 200);
+  await a('/auth/register', { username: 'vi_a', password: 'matkhau123' });
   const w = (await a('/wallet')).data;
-  assert.strictEqual(w.xu, 30);
-  assert.strictEqual(w.dailyAvailable, true);
-  assert.strictEqual((await a('/wallet/daily', {})).data.xu, 40);
-  assert.strictEqual((await a('/wallet/daily', {})).status, 409);
-  const st = (await a('/ai/status')).data;
-  assert.strictEqual(st.prices.trada, 3);
-  // Môi trường test không có khoá API -> AI tắt, không trừ xu
-  if (!st.enabled) {
-    assert.strictEqual((await a('/ai/packs', { drink: 'tragung' })).status, 503);
-    assert.strictEqual((await a('/wallet')).data.xu, 40);
+  assert.strictEqual(w.xu, 0);
+  assert.deepStrictEqual(w.vouchers, { self: 1, gift: 1 });
+  assert.strictEqual(w.economy.paywall, false, 'chưa đủ 200 người -> miễn phí');
+  assert.strictEqual(w.economy.threshold, 200);
+  const qt = (await a('/wallet/quote?drink=caphe&purpose=self&qty=1')).data;
+  assert.strictEqual(qt.text, 'miễn phí');
+  assert.strictEqual((await a('/ai/packs', { drink: 'tragung' })).status, 503, 'AI tắt trong test');
+});
+
+test('tặng lại ly mình được tặng; khi bắt đầu thu phí: phiếu -> xu; mua xu qua bot Telegram Stars', async () => {
+  const config = require('../server/config');
+  const economy = require('../server/economy');
+  const telegram = require('../server/telegram');
+  const a = client(), b = client(), c = client();
+  await a('/auth/register', { username: 'pay_a', password: 'matkhau123', nickname: 'Người A' });
+  await b('/auth/register', { username: 'pay_b', password: 'matkhau123', nickname: 'Người B' });
+  await c('/auth/register', { username: 'pay_c', password: 'matkhau123', nickname: 'Người C' });
+  const pa = (await a('/posts', { tableId: 'congviec', content: 'A kể chuyện công việc mệt mỏi' })).data.post.id;
+  const pb = (await b('/posts', { tableId: 'tinhcam', content: 'B kể chuyện tình cảm buồn quá' })).data.post.id;
+  const pc = (await c('/posts', { tableId: 'giadinh', content: 'C kể chuyện gia đình rối ren' })).data.post.id;
+
+  // Giai đoạn miễn phí: A mời B 3 ly trà gừng -> vào khay B
+  let r = await a(`/posts/${pb}/treat`, { drink: 'tragung', qty: 3 });
+  assert.strictEqual(r.data.paid, '3 ly miễn phí');
+  assert.deepStrictEqual((await b('/wallet')).data.tray, { tragung: 3 });
+  // B tặng lại 1 ly trà gừng cho C -> lấy từ khay
+  r = await b(`/posts/${pc}/treat`, { drink: 'tragung', qty: 1 });
+  assert.strictEqual(r.data.paid, '1 ly trong khay');
+  assert.deepStrictEqual((await b('/wallet')).data.tray, { tragung: 2 });
+  assert.deepStrictEqual((await c('/wallet')).data.tray, { tragung: 1 });
+
+  // Bắt đầu thu phí
+  config.paywall.mode = 'on';
+  try {
+    assert.strictEqual((await c('/wallet')).data.economy.paywall, true);
+    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
+    assert.strictEqual(r.data.paid, 'phiếu chào mừng', 'phiếu tặng dùng cho ly đầu tiên');
+    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
+    assert.strictEqual(r.status, 402, 'hết phiếu, 0 xu -> phải mua xu');
+    assert.strictEqual(r.data.needXu, 15);
+    r = await c(`/posts/${pa}/treat`, { drink: 'tragung', qty: 1 });
+    assert.strictEqual(r.data.paid, '1 ly trong khay', 'tặng lại ly được tặng thì không tốn xu');
+
+    // Mua xu qua bot Telegram (giả lập Bot API)
+    const sent = [];
+    telegram.setCaller(async (method, body) => { sent.push({ method, body }); return { message_id: 1 }; });
+    const link = await c('/telegram/link', {});
+    assert.match(link.data.url, /^https:\/\/t\.me\/xastress_bot\?start=/);
+    const code = link.data.url.split('start=')[1];
+    const from = { id: 777001 }, chat = { id: 777001 };
+    await telegram.handleUpdate({ update_id: 1, message: { chat, from, text: `/start ${code}` } });
+    assert.ok(sent.some((x) => x.method === 'sendMessage' && /Đã liên kết/.test(x.body.text)));
+    assert.strictEqual((await c('/wallet')).data.telegram.linked, true);
+    await telegram.handleUpdate({ update_id: 2, callback_query: { id: 'cb1', from, data: 'buy:vua', message: { chat } } });
+    const inv = sent.find((x) => x.method === 'sendInvoice');
+    assert.strictEqual(inv.body.currency, 'XTR');
+    assert.strictEqual(inv.body.prices[0].amount, 40);
+    const payload = inv.body.invoice_payload || inv.body.payload;
+    await telegram.handleUpdate({ update_id: 3, pre_checkout_query: { id: 'pq1', from, currency: 'XTR', total_amount: 40, invoice_payload: payload } });
+    assert.deepStrictEqual(sent.find((x) => x.method === 'answerPreCheckoutQuery').body, { pre_checkout_query_id: 'pq1', ok: true });
+    // người lạ không được trả tiền cho ví này
+    await telegram.handleUpdate({ update_id: 4, pre_checkout_query: { id: 'pq2', from: { id: 999 }, currency: 'XTR', total_amount: 40, invoice_payload: payload } });
+    assert.strictEqual(sent.filter((x) => x.method === 'answerPreCheckoutQuery').pop().body.ok, false);
+    const paid = { chat, from, successful_payment: { currency: 'XTR', total_amount: 40, invoice_payload: payload, telegram_payment_charge_id: 'ch_123' } };
+    await telegram.handleUpdate({ update_id: 5, message: paid });
+    await telegram.handleUpdate({ update_id: 6, message: paid }); // Telegram gửi trùng
+    assert.strictEqual((await c('/wallet')).data.xu, 60, 'cộng đúng một lần');
+
+    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
+    assert.strictEqual(r.data.paid, '15 xu');
+    assert.strictEqual((await c('/wallet')).data.xu, 45);
+  } finally {
+    config.paywall.mode = 'auto';
+    economy.resetCache();
   }
 });

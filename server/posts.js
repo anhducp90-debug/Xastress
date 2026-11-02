@@ -1,7 +1,8 @@
 'use strict';
 const express = require('express');
 const db = require('./db');
-const { TABLES, MOODS, REACTIONS, DRINKS, ECONOMY } = require('./constants');
+const { TABLES, MOODS, REACTIONS, DRINKS } = require('./constants');
+const economy = require('./economy');
 const { screenKindMessage } = require('./moderation');
 const ai = require('./ai');
 const { funnyReply, comboReply } = require('./funny');
@@ -53,10 +54,8 @@ const q = {
   treatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, u.nickname FROM treats t JOIN users u ON u.id = t.from_user
     WHERE t.post_id = ? AND t.message != '' ORDER BY t.id DESC LIMIT 40`),
   treatGivenToday: db.prepare('SELECT COALESCE(SUM(qty), 0) n FROM treats WHERE from_user = ? AND post_id = ? AND created_at > ?'),
-  treatRecvToday: db.prepare('SELECT COALESCE(SUM(qty), 0) n FROM treats WHERE to_user = ? AND created_at > ?'),
   insertTreat: db.prepare('INSERT INTO treats (post_id, from_user, to_user, drink, qty, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   notifyTreat: db.prepare('INSERT INTO notifications (user_id, kind, post_id, actor, message, qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
-  addXu: db.prepare('UPDATE users SET xu = xu + ? WHERE id = ?'),
   myTreatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE to_user = ? GROUP BY drink'),
   myTreatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, t.post_id, u.nickname, substr(p.content, 1, 60) preview
     FROM treats t JOIN users u ON u.id = t.from_user JOIN posts p ON p.id = t.post_id
@@ -245,19 +244,29 @@ router.post('/posts/:id/treat', requireUser, async (req, res) => {
     }
   }
   const now = Date.now();
-  q.insertTreat.run(p.id, req.user.id, p.user_id, drink, qty, message, now);
-  q.notifyTreat.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, message, qty, now);
-  // Người được mời nhận thêm xu để gọi gói Cô Tư AI (có trần mỗi ngày)
-  const recvToday = q.treatRecvToday.get(p.user_id, dayAgo).n - qty;
-  const bonus = Math.max(0, Math.min(qty * ECONOMY.xuPerTreatReceived, ECONOMY.xuFromTreatsPerDay - recvToday));
-  if (bonus) q.addXu.run(bonus, p.user_id);
+  // Trả cho số ly mời (khay -> miễn phí -> phiếu tặng -> xu); ly vào khay người nhận để uống hoặc tặng lại
+  let plan;
+  try {
+    plan = db.transaction(() => {
+      const pl = economy.pay(req.user.id, drink, qty, 'gift');
+      q.insertTreat.run(p.id, req.user.id, p.user_id, drink, qty, message, now);
+      q.notifyTreat.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, message, qty, now);
+      economy.addCups(p.user_id, drink, qty);
+      return pl;
+    })();
+  } catch (err) {
+    if (err instanceof economy.NeedXu) {
+      return res.status(402).json({ error: `Mời ${qty} ly cần ${err.cost} xu, ví đang có ${err.have} xu.`, needXu: err.cost, xu: err.have });
+    }
+    throw err;
+  }
   const summary = treatSummary(q.treatCounts.all(p.id));
   const reply = funnyReply(drink, summary.counts[drink]);
   realtime.notifyUser(p.user_id, {
-    kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname, qty, message, total: summary.counts[drink], funny: reply, bonus,
+    kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname, qty, message, total: summary.counts[drink], funny: reply, toTray: qty,
   });
   realtime.broadcast('treat', { postId: p.id, tableId: p.table_id, drink, qty });
-  res.json({ ok: true, treats: summary, reply, count: summary.counts[drink] });
+  res.json({ ok: true, treats: summary, reply, count: summary.counts[drink], paid: economy.describe(plan), wallet: economy.wallet(req.user.id) });
 });
 
 // Quầy quà của tôi: tổng số ly nhận được theo món + lời nhắn

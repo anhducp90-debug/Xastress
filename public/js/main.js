@@ -258,9 +258,11 @@ function connect() {
   socket.on('post:new', (p) => { game.sparkleTable(p.tableId); refreshTables(); });
   socket.on('post:remove', () => refreshTables());
   socket.on('notify', (n) => {
+    if (n.kind === 'xu') { toast(`🪙 Đã nạp ${n.amount} xu vào ví qua Telegram. Cảm ơn bạn ủng hộ quán!`); return; }
+    if (n.kind === 'tg_linked') { toast('✅ Đã liên kết Telegram. Chọn gói xu trong bot nhé.'); return; }
     toast(`${n.actor} ${notifText(n.kind, true, n.qty || 1)}${n.message ? `: “${n.message}”` : ''}`);
     if (n.funny) setTimeout(() => toast(`😅 ${n.funny}`), 700);
-    if (n.bonus) setTimeout(() => toast(`+${n.bonus} xu vào ví để gọi Cô Tư AI 👛`), 1400);
+    if (n.toTray) setTimeout(() => toast(`🧺 ${n.toTray} ly đã vào khay của bạn – uống hoặc tặng lại nhé`), 1400);
     refreshNotifs();
   });
   socket.on('treat', (t) => { game.sparkleTable(t.tableId); });
@@ -391,7 +393,7 @@ async function openMine() {
           <div class="counters big">${raw(treatChips(gifts.treats))}</div>
           <div class="reply-bubble"><b>Bạn:</b> “${gifts.treats.funny}”</div>
           ${gifts.notes.filter((t) => t.message).slice(0, 12).map((t) => html`<div class="tnote">${drinkById[t.drink] ? drinkById[t.drink].icon : '🍵'}×${t.qty} <b>${t.from}</b>: “${t.message}” <small>${ago(t.createdAt)}</small></div>`)}`
-        : html`<p class="tag">Khi bạn kể chuyện, mọi người có thể mời bạn trà đá, cà phê… kèm lời nhắn. Mỗi ly được +1 xu.</p>`}
+        : html`<p class="tag">Khi bạn kể chuyện, mọi người có thể mời bạn trà đá, cà phê… kèm lời nhắn. Ly được mời vào khay để bạn uống hoặc tặng lại.</p>`}
       </section>
       <p class="tag">Chỉ mình bạn thấy danh sách này. Khi đã ổn hơn, hãy đánh dấu "Đã vượt qua" để truyền cảm hứng cho người khác ✨</p>
       <div id="list">${posts.length ? posts.map((p) => postCard(p)) : html`<div class="empty"><div class="big">📝</div>Bạn chưa kể chuyện nào.</div>`}</div>`.s;
