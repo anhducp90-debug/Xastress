@@ -24,7 +24,7 @@ function shade(hex, amt) {
 }
 export { shade };
 
-function mk(w, h) {
+export function mk(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
@@ -33,7 +33,7 @@ function mk(w, h) {
 }
 
 // Thêm viền tối 1px quanh hình để nổi bật trên nền
-function outlined(src, color = '#2a1d16') {
+export function outlined(src, color = '#2a1d16') {
   const [c, ctx] = mk(src.width, src.height);
   const [m, mctx] = mk(src.width, src.height);
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) mctx.drawImage(src, dx, dy);
@@ -156,7 +156,7 @@ export function getCharSprite(av, dir = 'down', frame = 0, sit = false) {
 
 // ------- Đồ vật -------
 const objCache = new Map();
-function cached(key, w, h, draw) {
+export function cached(key, w, h, draw) {
   let c = objCache.get(key);
   if (c) return c;
   const [cv, ctx] = mk(w, h);

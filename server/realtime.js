@@ -3,7 +3,7 @@
 const { maskBadWords, clean, hasCrisisSignal } = require('./moderation');
 const { hit } = require('./ratelimit');
 
-const WORLD = { w: 40 * 16, h: 26 * 16 };
+const WORLD = { w: 640, h: 448 };
 const EMOTES = ['wave', 'heart', 'hug', 'cheer', 'tea', 'sad', 'laugh'];
 
 let io = null;
@@ -26,7 +26,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
     const u = publicUser(socket.data.user);
     const p = {
       sid: socket.id, userId: u.id, nickname: u.nickname, avatar: u.avatar,
-      x: 60 + Math.random() * 40, y: 300 + Math.random() * 20, dir: 'up', moving: false, sit: false,
+      x: 70 + Math.random() * 60, y: 326 + Math.random() * 14, dir: 'up', moving: false, sit: false,
     };
     players.set(socket.id, p);
     socket.join(`user:${u.id}`);

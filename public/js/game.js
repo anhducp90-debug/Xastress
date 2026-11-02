@@ -1,6 +1,7 @@
 // Vòng lặp game: vẽ quán, nhân vật, xe cộ, ngày/đêm; điều khiển bàn phím & chạm.
 import * as S from './sprites.js';
 import * as Wd from './world.js';
+import * as V from './vnart.js';
 
 const SPEED = 62; // px/giây
 const EMOTE_ICON = { wave: '👋', heart: '❤️', hug: '🤗', cheer: '💪', tea: '🍵', sad: '😢', laugh: '😂' };
@@ -13,6 +14,16 @@ const NPC_LINES = [
   'Ly trà đá hai nghìn, lời động viên miễn phí!',
   'Mưa rồi cũng tạnh, chuyện rồi cũng qua.',
   'Ăn miếng kẹo lạc cho đỡ buồn nè.',
+  'Rít điếu thuốc lào cho tỉnh rồi kể tiếp!',
+  'Trà đá hôm nay cô pha đậm, uống cho tỉnh táo.',
+];
+const XEOM_LINES = [
+  'Xe ôm không cháu ơi?', 'Đi đâu chú chở, rẻ thôi!', 'Hôm nay đường tắc quá trời.',
+  'Chú chạy xe ba chục năm, chuyện gì cũng qua hết cháu ạ.', 'Mệt thì ngồi uống ly trà đá đã.',
+];
+const VENDOR_LINES = [
+  ['Ai xoài, ổi, mận ngọt không?', 'Hoa quả tươi đây, ngọt lắm!', 'Mua giúp cô ít ổi đi cháu!'],
+  ['Ai bánh mì nóng giòn đây!', 'Xôi lạc, bánh giò đây!', 'Ai bánh khúc nóng không?'],
 ];
 
 export class Game {
@@ -35,7 +46,11 @@ export class Game {
     this.emotes = [];
     this.leaves = [];
     this.bikes = [];
-    this.cat = { x: 480, y: 140, tx: 480, ty: 140, t: 0, sleep: 0, dir: 1 };
+    this.cat = { x: 480, y: 200, tx: 480, ty: 200, t: 0, sleep: 0, dir: 1 };
+    this.vendor = { x: 340, y: 338, dir: -1, pause: 0, goods: 0, anim: 0, frame: 0 };
+    this.steam = [];
+    this.talk = new Map(); // bong bóng của các NPC phụ: xeom, vendor
+    this.talkNext = { xeom: performance.now() + 9000, vendor: performance.now() + 6000 };
     this.npc = { bubble: null, until: 0, next: performance.now() + 4000 };
     this.hover = null;
     this.lastSent = 0;
@@ -121,6 +136,7 @@ export class Game {
       if (!this.me) return;
       const w = toWorld(ev);
       const target = this.hitTest(w.x, w.y);
+      if (target && (target.type === 'xeom' || target.type === 'vendor')) { this.interact(target); return; }
       if (target) {
         const near = this.nearestApproach(target);
         if (Math.hypot(this.me.x - near.x, this.me.y - near.y) < 6) { this.interact(target); return; }
@@ -133,7 +149,10 @@ export class Game {
 
   hitTest(x, y) {
     for (const t of Wd.TABLES) if (Math.abs(x - t.x) < 18 && y > t.y - 14 && y < t.y + 10) return { type: 'table', id: t.id };
-    if (Math.abs(x - Wd.NPC_POS.x) < 40 && y > Wd.NPC_POS.y - 30 && y < Wd.CART.y + 2) return { type: 'npc' };
+    if (Math.abs(x - Wd.NPC_POS.x) < 44 && y > Wd.NPC_POS.y - 34 && y < Wd.CART.y + 2) return { type: 'npc' };
+    if (Math.abs(x - Wd.XEOM.x) < 22 && y > Wd.XEOM.y - 36 && y < Wd.XEOM.y + 2) return { type: 'xeom' };
+    const v = this.vendor;
+    if (Math.abs(x - v.x) < 24 && y > v.y - 34 && y < v.y + 2) return { type: 'vendor' };
     return null;
   }
   nearestApproach(target) {
@@ -170,7 +189,16 @@ export class Game {
     } else if (target.type === 'npc') {
       this.me.dir = 'up';
       this.hooks.onNpc();
+    } else if (target.type === 'xeom') {
+      this.npcSay('xeom', XEOM_LINES[(Math.random() * XEOM_LINES.length) | 0]);
+    } else if (target.type === 'vendor') {
+      const l = VENDOR_LINES[this.vendor.goods];
+      this.npcSay('vendor', l[(Math.random() * l.length) | 0]);
+      this.vendor.pause = Math.max(this.vendor.pause, 3);
     }
+  }
+  npcSay(who, text) {
+    this.talk.set(who, { text, until: performance.now() + 4500 });
   }
 
   // ---------- Cập nhật ----------
@@ -217,7 +245,7 @@ export class Game {
       for (const t of Wd.TABLES) {
         if (Math.hypot(me.x - t.x, me.y - t.y) < 34) { this.hover = { type: 'table', id: t.id }; break; }
       }
-      if (!this.hover && Math.abs(me.x - Wd.CART.x) < 46 && me.y > Wd.CART.y - 2 && me.y < Wd.CART.y + 26) this.hover = { type: 'npc' };
+      if (!this.hover && Math.abs(me.x - Wd.CART.x) < 50 && me.y > Wd.CART.y - 2 && me.y < Wd.CART.y + 26) this.hover = { type: 'npc' };
     }
     // Người chơi khác: nội suy
     for (const p of this.players.values()) {
@@ -228,25 +256,64 @@ export class Game {
       if (p.moving) { p.anim += dt * 8; p.frame = 1 + (Math.floor(p.anim) % 2); } else p.frame = 0;
     }
     // Xe máy chạy ngoài đường
-    if (Math.random() < dt * 0.45 && this.bikes.length < 7) {
-      const right = Math.random() < 0.5;
-      const cols = ['#c0392b', '#2980b9', '#27ae60', '#f39c12', '#8e44ad', '#2c3e50', '#ecf0f1'];
-      const shirts = S.PALETTE.shirt;
+    if (Math.random() < dt * 0.7 && this.bikes.length < 9) {
+      const lane = Wd.LANES[Math.random() < 0.5 ? 0 : 1];
+      const pick = (a) => a[(Math.random() * a.length) | 0];
+      const bodies = ['#8e2a20', '#2c3e50', '#e8e4da', '#1f5fa8', '#c0392b', '#3a3a40', '#6b2d5c', '#d4a017'];
+      const shirts = ['#f2efe6', '#e74c3c', '#3b8fd6', '#f3c623', '#9b59b6', '#5f7f4a', '#ec6fa0', '#2e2e34'];
+      const helmets = ['#2c6fbb', '#e74c3c', '#f3c623', '#ffffff', '#2e2e34', '#ec6fa0', '#3fbf6f'];
+      const flower = Math.random() < 0.12;
+      const opt = { rider: pick(shirts), riderHelmet: pick(helmets), basket: Math.random() < 0.4, mask: Math.random() < 0.4 };
+      const r = Math.random();
+      if (r < 0.25) opt.passenger = pick(shirts);
+      else if (r < 0.38) opt.cargo = 'box';
+      else if (r < 0.48) opt.cargo = 'water';
+      else if (r < 0.55) opt.cargo = 'flower';
       this.bikes.push({
-        x: right ? -40 : Wd.W + 40, y: right ? 362 : 404, v: (right ? 1 : -1) * (50 + Math.random() * 50),
-        img: S.motorbike(cols[(Math.random() * cols.length) | 0], shirts[(Math.random() * shirts.length) | 0]),
-        honk: Math.random() < 0.15 ? now + 800 + Math.random() * 2000 : 0,
+        x: lane.dir > 0 ? -50 : Wd.W + 50, y: lane.y, v: lane.dir * (flower ? 22 : 45 + Math.random() * 55),
+        img: flower ? null : V.bikeVN(pick(bodies), opt), flower, ph: Math.random() * 10,
       });
+      // tránh xe đè nhau cùng làn
+      const last = this.bikes[this.bikes.length - 1];
+      if (this.bikes.some((b) => b !== last && b.y === last.y && Math.abs(b.x - last.x) < 60)) this.bikes.pop();
     }
-    for (const b of this.bikes) b.x += b.v * dt;
-    this.bikes = this.bikes.filter((b) => b.x > -60 && b.x < Wd.W + 60);
+    for (const b of this.bikes) {
+      // giữ khoảng cách với xe phía trước cùng làn
+      const ahead = this.bikes.filter((o) => o !== b && o.y === b.y && Math.sign(o.x - b.x) === Math.sign(b.v) && Math.abs(o.x - b.x) < 52);
+      const v = ahead.length ? ahead.reduce((m, o) => (Math.abs(o.v) < Math.abs(m) ? o.v : m), b.v) : b.v;
+      b.x += v * dt;
+    }
+    this.bikes = this.bikes.filter((b) => b.x > -70 && b.x < Wd.W + 70);
     // Lá bàng rơi
     if (Math.random() < dt * 0.6) {
-      const tx = Math.random() < 0.5 ? 42 : 602;
-      this.leaves.push({ x: tx + (Math.random() - 0.5) * 60, y: 110 + Math.random() * 30, vy: 10 + Math.random() * 8, ph: Math.random() * 6, life: 0, col: Math.random() < 0.5 ? '#c4472b' : '#e0702f' });
+      const t = Wd.TREES[Math.random() < 0.5 ? 0 : 1];
+      const col = t.kind === 'phuong' ? (Math.random() < 0.6 ? '#e53922' : '#ff7a3a') : (Math.random() < 0.5 ? '#b93a22' : '#d0742f');
+      this.leaves.push({ x: t.x + (Math.random() - 0.5) * 100, y: t.y - 120 + Math.random() * 60, vy: 9 + Math.random() * 8, ph: Math.random() * 6, life: 0, col });
     }
     for (const l of this.leaves) { l.life += dt; l.y += l.vy * dt; l.x += Math.sin(l.ph + l.life * 2.5) * 12 * dt; }
-    this.leaves = this.leaves.filter((l) => l.life < 5);
+    this.leaves = this.leaves.filter((l) => l.life < 6);
+    // Hơi nồi phở bốc lên
+    if (Math.random() < dt * 6) this.steam.push({ x: Wd.PHO_STEAM.x + (Math.random() - 0.5) * 14, y: Wd.PHO_STEAM.y, life: 0, ph: Math.random() * 6 });
+    for (const st of this.steam) { st.life += dt; st.y -= 9 * dt; st.x += Math.sin(st.ph + st.life * 2) * 6 * dt; }
+    this.steam = this.steam.filter((st) => st.life < 2.6);
+    // Gánh hàng rong đi dọc mép vỉa hè
+    const vd = this.vendor;
+    if (vd.pause > 0) { vd.pause -= dt; vd.frame = 0; }
+    else {
+      vd.x += vd.dir * 14 * dt;
+      vd.anim += dt * 5; vd.frame = 1 + (Math.floor(vd.anim) % 2);
+      if (vd.x < 24 || vd.x > 366) { vd.dir *= -1; vd.x = Math.max(24, Math.min(366, vd.x)); }
+      if (Math.random() < dt * 0.08) vd.pause = 3 + Math.random() * 4;
+    }
+    // NPC phụ thỉnh thoảng lên tiếng
+    for (const who of ['xeom', 'vendor']) {
+      if (now > this.talkNext[who]) {
+        const lines = who === 'xeom' ? XEOM_LINES : VENDOR_LINES[vd.goods];
+        this.npcSay(who, lines[(Math.random() * lines.length) | 0]);
+        this.talkNext[who] = now + 14000 + Math.random() * 22000;
+        if (who === 'vendor' && Math.random() < 0.3) vd.goods = 1 - vd.goods;
+      }
+    }
     // Mèo đi lang thang
     const c = this.cat;
     c.t += dt;
@@ -314,6 +381,9 @@ export class Game {
     g.fillStyle = '#2b2f2a';
     g.fillRect(this.camX, this.camY, this.vw, this.vh);
     g.drawImage(this.bg, 0, 0);
+    // Cờ đỏ sao vàng bay trên ban công
+    const ff = Math.floor(now / 260) % 3;
+    for (const f of Wd.HOUSE_FLAGS()) g.drawImage(V.flag(ff), f.x, f.y - 30);
 
     // Danh sách vẽ theo chiều sâu
     const items = this.statics.map((s) => ({ base: s.base, draw: () => {
@@ -345,10 +415,24 @@ export class Game {
     }
     for (const b of this.bikes) {
       items.push({ base: b.y, draw: () => {
-        const x = Math.round(b.x), y = b.y - 26 + (Math.floor(now / 120) % 2);
-        if (b.v < 0) { g.save(); g.scale(-1, 1); g.drawImage(b.img, -x - 18, y); g.restore(); } else g.drawImage(b.img, x - 18, y);
+        const img = b.flower ? V.flowerBike(Math.floor(now / 250) % 2) : b.img;
+        const x = Math.round(b.x), y = b.y - img.height + 1 + (Math.floor(now / 110 + b.ph) % 2);
+        if (b.v < 0) { g.save(); g.scale(-1, 1); g.drawImage(img, -x - img.width / 2, y); g.restore(); } else g.drawImage(img, x - img.width / 2, y);
       } });
     }
+    // Bác xe ôm
+    items.push({ base: Wd.XEOM.y, draw: () => {
+      const img = V.xeOm(Math.floor(now / 900) % 3 === 2 ? 1 : 0);
+      g.drawImage(img, Wd.XEOM.x - 23, Wd.XEOM.y - 45);
+    } });
+    // Gánh hàng rong
+    const vd = this.vendor;
+    items.push({ base: vd.y, draw: () => {
+      const img = V.vendor(vd.frame, vd.goods);
+      g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(Math.round(vd.x), vd.y - 1, 18, 3, 0, 0, Math.PI * 2); g.fill();
+      if (vd.dir > 0) { g.save(); g.scale(-1, 1); g.drawImage(img, -Math.round(vd.x) - 26, vd.y - 38); g.restore(); }
+      else g.drawImage(img, Math.round(vd.x) - 26, vd.y - 38);
+    } });
     items.sort((a, b) => a.base - b.base);
     for (const it of items) it.draw();
 
@@ -364,15 +448,43 @@ export class Game {
         g.fillRect(Math.round(s.x + Math.cos(a) * r), Math.round(s.y + Math.sin(a) * r * 0.6 - k * 10), 2, 2);
       }
     }
-    // Dây đèn
+    // Hơi nồi phở
+    for (const st of this.steam) {
+      g.fillStyle = `rgba(255,255,255,${0.5 * (1 - st.life / 2.6)})`;
+      const r = 1 + st.life * 1.4;
+      g.fillRect(Math.round(st.x - r), Math.round(st.y - r), Math.round(r * 2), Math.round(r * 2));
+    }
     const dark = this.darkness();
-    g.strokeStyle = '#2a2a2e'; g.lineWidth = 1;
-    g.beginPath();
-    Wd.BULBS.forEach((b, i) => (i ? g.lineTo(b.x, b.y) : g.moveTo(b.x, b.y)));
-    g.stroke();
+    // Ô che quầy & đèn lồng đỏ
+    g.drawImage(V.umbrella(), Wd.UMBRELLA.x, Wd.UMBRELLA.y);
+    g.strokeStyle = '#3a2a22'; g.lineWidth = 1;
+    for (const l of Wd.LANTERNS) {
+      const sw = Math.round(Math.sin(now / 700 + l.x) * 1);
+      g.beginPath(); g.moveTo(l.x + 4, l.y - 2); g.lineTo(l.x + 4 + sw, l.y + 1); g.stroke();
+      g.drawImage(V.lantern(), l.x + sw, l.y);
+    }
+    // Dây điện chằng chịt
+    g.strokeStyle = 'rgba(22,22,26,0.9)';
+    for (const [x1, y1, x2, y2, sag] of Wd.WIRES) {
+      g.beginPath(); g.moveTo(x1, y1); g.quadraticCurveTo((x1 + x2) / 2, Math.max(y1, y2) + sag, x2, y2); g.stroke();
+    }
+    // Đèn cao áp cần cong
+    const L = Wd.LAMP;
+    g.strokeStyle = '#6f6e69'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(Wd.POLE.x + 3, L.y + 10); g.quadraticCurveTo(Wd.POLE.x + 6, L.y - 2, L.x, L.y); g.stroke();
+    g.lineWidth = 1;
+    g.fillStyle = '#4b5157'; g.fillRect(L.x - 2, L.y - 1, 12, 4);
+    g.fillStyle = dark > 0.1 ? '#fff2c0' : '#d8d4c4'; g.fillRect(L.x, L.y + 3, 8, 2);
+    // Dây bóng đèn tròn
+    g.strokeStyle = '#2a2a2e';
+    for (const str of Wd.BULB_STRINGS) {
+      g.beginPath();
+      str.forEach((b, i) => (i ? g.lineTo(b.x, b.y) : g.moveTo(b.x, b.y)));
+      g.stroke();
+    }
     for (const [i, b] of Wd.BULBS.entries()) {
       g.fillStyle = dark > 0.1 ? ['#ffd36e', '#ff9f6e', '#fff3b0'][i % 3] : '#e9e4d0';
-      g.fillRect(b.x - 1, b.y + 1, 3, 3);
+      g.fillRect(Math.round(b.x) - 1, Math.round(b.y) + 1, 3, 3);
     }
     // Ban đêm
     if (dark > 0.01) this.drawNight(g, dark, now);
@@ -420,8 +532,9 @@ export class Game {
     };
     for (const l of Wd.LIGHTS) hole(l.x, l.y, l.r * flick, 0.95);
     for (const b of Wd.BULBS) hole(b.x, b.y + 2, 26, 0.6);
+    for (const l of Wd.LANTERNS) hole(l.x + 4, l.y + 6, 22, 0.8);
     for (const w of Wd.WINDOWS) if (w.lit) { ng.fillStyle = 'rgba(0,0,0,0.85)'; ng.fillRect(w.x, w.y, w.w, w.h); }
-    for (const b of this.bikes) hole(b.x + (b.v > 0 ? 30 : -30), b.y - 12, 26, 0.7);
+    for (const b of this.bikes) hole(b.x + (b.v > 0 ? 34 : -34), b.y - 18, 28, 0.7);
     g.drawImage(n, this.camX, this.camY);
     // Ánh vàng ấm
     g.globalCompositeOperation = 'lighter';
@@ -454,8 +567,28 @@ export class Game {
       return { w, h };
     };
 
-    // Biển hiệu quán
-    pill('☕ TRÀ ĐÁ XẢ STRESS', sx(320), sy(34), 800, Math.max(12, (z / d) * 5.5), 'rgba(122,35,24,0.92)', '#fff4d6', 8);
+    // Biển hiệu cửa hàng (chữ tiếng Việt sắc nét)
+    const k = z; // px màn hình / px thế giới
+    for (const sg of Wd.SIGNS) {
+      ctx.fillStyle = sg.fg;
+      fitText(ctx, sg.text, sx(sg.x + sg.w / 2), sy(sg.y + sg.h / 2 + 0.5), sg.w * k * 0.92, sg.h * k * 0.78, '800', '"Arial Narrow", Arial, sans-serif');
+      ctx.globalAlpha = 0.9;
+      fitText(ctx, sg.sub, sx(sg.x + sg.w / 2), sy(sg.y + sg.h + 2), sg.w * k * 0.9, 3.4 * k, '600', 'Arial, sans-serif');
+      ctx.globalAlpha = 1;
+    }
+    for (const lb of Wd.LABELS) {
+      ctx.save();
+      ctx.translate(sx(lb.x), sy(lb.y));
+      if (lb.rot) ctx.rotate(lb.rot);
+      const fam = lb.hand ? '"Comic Sans MS", "Segoe Print", "Bradley Hand", cursive' : 'Arial, sans-serif';
+      ctx.font = `${lb.bold || lb.hand ? 800 : 600} ${Math.round(lb.size * k * 0.62)}px ${fam}`;
+      if (lb.bg) { const tw = ctx.measureText(lb.text).width; ctx.fillStyle = lb.bg; ctx.fillRect(-tw / 2 - 2 * d, -lb.size * k * 0.4, tw + 4 * d, lb.size * k * 0.8); }
+      ctx.fillStyle = lb.color;
+      ctx.fillText(lb.text, 0, 0);
+      ctx.restore();
+    }
+    // Tên quán trên tán ô
+    pill('☕ TRÀ ĐÁ XẢ STRESS', sx(Wd.UMBRELLA.x + 64), sy(Wd.UMBRELLA.y + 20), 900, Math.max(10, (k / d) * 4.2), 'rgba(140,28,18,0.92)', '#fff4d6', 6);
     // Nhãn bàn
     for (const t of Wd.TABLES) {
       const hov = this.hover && this.hover.type === 'table' && this.hover.id === t.id;
@@ -472,8 +605,17 @@ export class Game {
       else if (b) this.bubbles.delete(p.sid);
     }
     // Cô chủ quán
-    pill('Cô Tư chủ quán', sx(Wd.NPC_POS.x), sy(Wd.NPC_POS.y - 40), 600, 11, 'rgba(122,35,24,0.8)', '#fff4d6', 4);
-    if (this.npc.bubble && this.npc.until > now) this.bubble(ctx, this.npc.bubble, sx(Wd.NPC_POS.x), sy(Wd.NPC_POS.y - 40) - 14 * d, fs);
+    pill('Cô Tư chủ quán', sx(Wd.NPC_POS.x), sy(Wd.NPC_POS.y - 34), 600, 11, 'rgba(122,35,24,0.85)', '#fff4d6', 4);
+    if (this.npc.bubble && this.npc.until > now) this.bubble(ctx, this.npc.bubble, sx(Wd.NPC_POS.x), sy(Wd.NPC_POS.y - 34) - 10 * d, fs);
+    const vd = this.vendor;
+    const extra = [['xeom', Wd.XEOM.x, Wd.XEOM.y - 44, 'Bác xe ôm'], ['vendor', vd.x, vd.y - 40, 'Cô bán hàng rong']];
+    for (const [who, x, y, name] of extra) {
+      const t = this.talk.get(who);
+      if (t && t.until > now) {
+        pill(name, sx(x), sy(y), 600, 10, 'rgba(20,20,28,0.55)', '#fff', 4);
+        this.bubble(ctx, t.text, sx(x), sy(y) - 12 * d, fs);
+      }
+    }
     // Biểu cảm
     this.emotes = this.emotes.filter((e) => now - e.t0 < 2200);
     for (const e of this.emotes) {
@@ -487,7 +629,7 @@ export class Game {
     }
     // Gợi ý tương tác
     if (this.hover && this.me && !this.hooks.isUiOpen()) {
-      const label = this.hover.type === 'npc' ? 'Trò chuyện với Cô Tư' : `Ngồi ${Wd.tableById[this.hover.id].name}`;
+      const label = this.hover.type === 'npc' ? 'Trò chuyện với Cô Tư' : `Ngồi bàn ${Wd.tableById[this.hover.id].name}`;
       const touch = matchMedia('(pointer: coarse)').matches;
       pill(touch ? `👆 Chạm để ${label.toLowerCase()}` : `[E] ${label}`, sx(this.me.x), sy(this.me.y + 10), 700, 12, 'rgba(255,244,214,0.95)', '#5a2d14', 6);
     }
@@ -518,6 +660,17 @@ export class Game {
     ctx.fillStyle = '#2b1d16';
     lines.forEach((l, i) => ctx.fillText(l, x, top + 4 * d + lh * (i + 0.5)));
   }
+}
+
+// Vẽ chữ co giãn vừa khung
+function fitText(ctx, text, x, y, maxW, maxH, weight, family) {
+  let size = Math.max(6, Math.floor(maxH));
+  ctx.font = `${weight} ${size}px ${family}`;
+  const w = ctx.measureText(text).width;
+  if (w > maxW) { size = Math.max(5, Math.floor(size * (maxW / w))); ctx.font = `${weight} ${size}px ${family}`; }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
