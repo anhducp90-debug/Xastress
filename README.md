@@ -1,4 +1,4 @@
-# ☕ Trà Đá Xả Stress — xastress.info.vn
+# ☕ Trà Đá Xả Stress — xastress.lopchungminh.net
 
 Quán trà đá vỉa hè online trong một **góc phố Việt Nam 3D** (WebGL), phong cách hoạt hình low‑poly ấm áp.
 Mọi người vào quán với **một danh tính riêng, ẩn danh**, ngồi vào các bàn theo chủ đề để
@@ -12,7 +12,7 @@ và nhận về sự **đồng cảm, chia sẻ, cổ vũ** từ những ngườ
 - Vỉa hè gạch đỏ, gốc cây quét vôi, cây bàng và phượng vĩ rụng lá/hoa, cột điện dây chằng chịt, đèn cao áp, dây bóng đèn tròn, ghế nhựa xanh đỏ.
 - Cô gánh hàng rong rao hàng, bác xe ôm đội mũ cối, xe máy chở người/hàng/hoa, xe đạp chở hoa, nồi phở bốc khói, mèo vàng.
 - Nhân vật 3D chibi tự thiết kế (da, tóc, áo, quần, nón lá/mũ), có dáng đi, ngồi ghế nhựa; camera bám theo, lăn chuột hoặc chụm 2 ngón để phóng to/thu nhỏ.
-- Máy không hỗ trợ WebGL tự chuyển sang bản 2D pixel nhẹ; có thể ép dùng 2D bằng cách mở `https://xastress.info.vn/?2d`.
+- Máy không hỗ trợ WebGL tự chuyển sang bản 2D pixel nhẹ; có thể ép dùng 2D bằng cách mở `https://xastress.lopchungminh.net/?2d`.
 - **Cô Tư chủ quán** (đội nón lá) đứng ở quầy với ấm trà, phích đỏ, lọ kẹo lạc. Có thể trò chuyện, nghe lời an ủi, tập **thở cùng cô** (hít 4 – giữ 4 – thở 6).
 - **Ngày / đêm theo giờ Việt Nam**: tối đến đèn đường, đèn dây, cửa sổ các nhà sáng lên.
 - Thấy những người khác đi lại, ngồi ghế; chat bong bóng và biểu cảm (👋 🤗 ❤️ 💪 🍵).
@@ -163,8 +163,8 @@ npm test
 
 ## Triển khai lên VPS (Ubuntu 22.04 / 24.04)
 
-1. **Trỏ DNS**: tại nhà cung cấp tên miền `.info.vn`, tạo bản ghi
-   `A  xastress.info.vn  → <IP VPS>` và `A  www.xastress.info.vn → <IP VPS>`.
+1. **Trỏ DNS**: tại nơi quản lý DNS của `lopchungminh.net`, tạo bản ghi
+   `A  xastress  → <IP VPS>` (tức `xastress.lopchungminh.net`). Nếu dùng Cloudflare, để chế độ "DNS only" (đám mây xám) khi lấy chứng chỉ lần đầu.
 2. **Đưa mã nguồn lên VPS** và chạy script:
    ```bash
    git clone <repo> xastress && cd xastress
@@ -174,7 +174,7 @@ npm test
    chạy dịch vụ systemd `xastress`; cấu hình Nginx (WebSocket); bật tường lửa UFW;
    lấy chứng chỉ HTTPS Let's Encrypt; sao lưu CSDL mỗi ngày lúc 3h vào `/var/backups/xastress`.
 3. **Bật Cô Tư AI** (tuỳ chọn): điền `ANTHROPIC_API_KEY` trong `/opt/xastress/.env` (lấy khoá ở platform.claude.com). Mặc định dùng `claude-opus-5-5`; đổi model (kể cả model mới nhất) ngay trong trang quản trị → AI cho Cô Tư, không cần sửa `.env`. Rồi `sudo systemctl restart xastress`.
-4. **Nhận chuyển khoản (VietQR + SePay)**: vào trang quản trị → 💳 Thanh toán → Cài đặt: chọn ngân hàng, nhập số tài khoản, tên chủ tài khoản → Lưu (quét QR thử để kiểm tra đúng tên). Để xu tự vào ví: đăng ký my.sepay.vn, liên kết tài khoản ngân hàng đó, tạo webhook sự kiện “Có tiền vào” tới `https://xastress.info.vn/api/pay/webhook/sepay`, kiểu chứng thực **API Key**, rồi dán API Key vào ô “API Key SePay”. Nginx hiện tại đã chuyển mọi đường dẫn `/api/` về ứng dụng nên không cần sửa thêm.
+4. **Nhận chuyển khoản (VietQR + SePay)**: vào trang quản trị → 💳 Thanh toán → Cài đặt: chọn ngân hàng, nhập số tài khoản, tên chủ tài khoản → Lưu (quét QR thử để kiểm tra đúng tên). Để xu tự vào ví: đăng ký my.sepay.vn, liên kết tài khoản ngân hàng đó, tạo webhook sự kiện “Có tiền vào” tới `https://xastress.lopchungminh.net/api/pay/webhook/sepay`, kiểu chứng thực **API Key**, rồi dán API Key vào ô “API Key SePay”. Nginx hiện tại đã chuyển mọi đường dẫn `/api/` về ứng dụng nên không cần sửa thêm.
 5. **Bot Telegram bán xu** (cần trước khi đủ 200 khách): nhắn @BotFather → `/newbot` → lấy token → điền `TELEGRAM_BOT_TOKEN` và `TELEGRAM_BOT_USERNAME` trong `.env`, sửa `TELEGRAM_SUPPORT`, rồi khởi động lại. Bot chạy kiểu long polling nên không cần mở thêm cổng. Telegram Stars không cần đăng ký cổng thanh toán; Stars thu được rút qua Fragment theo quy định của Telegram.
 6. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
    rồi `sudo systemctl restart xastress` và đăng nhập lại.

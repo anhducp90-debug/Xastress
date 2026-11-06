@@ -74,7 +74,7 @@ async function handleMessage(m) {
 
   if (cmd === '/start' && arg) {
     const c = q.code.get(arg, Date.now());
-    if (!c) return reply(chatId, '⚠️ Mã liên kết đã hết hạn hoặc không đúng. Vào xastress.info.vn → 🧋 Gọi nước → "Mua xu qua Telegram" để lấy mã mới nhé.');
+    if (!c) return reply(chatId, '⚠️ Mã liên kết đã hết hạn hoặc không đúng. Vào xastress.lopchungminh.net → 🪙 Nạp xu → ⭐ Stars để lấy mã mới nhé.');
     q.delCode.run(arg);
     db.transaction(() => { q.unlinkTg.run(from.id, c.user_id); q.link.run(c.user_id, from.id, chatId, Date.now()); })();
     const l = q.linkByTg.get(from.id);
@@ -83,11 +83,11 @@ async function handleMessage(m) {
     return showPackages(chatId, l);
   }
   if (cmd === '/start' || cmd === '/help') {
-    return reply(chatId, '☕ Chào bạn! Đây là bot bán xu của quán Trà Đá Xả Stress.\n\nĐể mua xu: vào xastress.info.vn → 🧋 Gọi nước → "Mua xu qua Telegram". Bot sẽ tự liên kết với tài khoản của bạn.\n\n/mua – mua xu\n/vi – xem ví\n/huy – bỏ liên kết\n/paysupport – hỗ trợ thanh toán');
+    return reply(chatId, '☕ Chào bạn! Đây là bot bán xu của quán Trà Đá Xả Stress.\n\nĐể mua xu: vào xastress.lopchungminh.net → 🪙 Nạp xu → chọn gói ⭐ Stars. Bot sẽ tự liên kết với tài khoản của bạn.\n\n/mua – mua xu\n/vi – xem ví\n/huy – bỏ liên kết\n/paysupport – hỗ trợ thanh toán');
   }
   if (cmd === '/paysupport') return reply(chatId, `🧾 Hỗ trợ thanh toán: ${tg.support}`);
-  if (cmd === '/terms') return reply(chatId, 'Xu dùng để gọi nước trong quán xastress.info.vn: mỗi ly là một gói tâm sự Cô Tư AI và được tặng kèm 1 ly để mời người khác. Xu không quy đổi ra tiền. Lỗi giao dịch được hoàn Stars theo yêu cầu qua /paysupport.');
-  if (!link) return reply(chatId, '🔗 Bạn chưa liên kết tài khoản quán. Vào xastress.info.vn → 🧋 Gọi nước → "Mua xu qua Telegram" nhé.');
+  if (cmd === '/terms') return reply(chatId, 'Xu dùng để gọi nước trong quán xastress.lopchungminh.net: mỗi ly là một gói tâm sự Cô Tư AI và được tặng kèm 1 ly để mời người khác. Xu không quy đổi ra tiền. Lỗi giao dịch được hoàn Stars theo yêu cầu qua /paysupport.');
+  if (!link) return reply(chatId, '🔗 Bạn chưa liên kết tài khoản quán. Vào xastress.lopchungminh.net → 🪙 Nạp xu → chọn gói ⭐ Stars nhé.');
   if (cmd === '/huy') { q.unlinkTg.run(from.id, link.user_id); return reply(chatId, '👋 Đã bỏ liên kết. Hẹn gặp lại ở quán!'); }
   if (cmd === '/vi') return reply(chatId, `👛 Ví của ${link.nickname}: ${link.xu} xu`);
   return showPackages(chatId, link); // /mua hoặc tin nhắn bất kỳ

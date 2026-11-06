@@ -3,7 +3,7 @@
 #   sudo bash deploy/setup-vps.sh  [email-nhan-thong-bao-ssl]
 set -euo pipefail
 
-DOMAIN=xastress.info.vn
+DOMAIN=xastress.lopchungminh.net
 APP_DIR=/opt/xastress
 EMAIL=${1:-}
 SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
@@ -53,10 +53,10 @@ ufw --force enable
 
 echo "==> HTTPS (Let's Encrypt) – yêu cầu DNS A record của $DOMAIN đã trỏ về VPS"
 if [ -n "$EMAIL" ]; then
-  certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect || \
-    echo "!! Chưa lấy được chứng chỉ. Kiểm tra DNS rồi chạy lại: certbot --nginx -d $DOMAIN -d www.$DOMAIN"
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect || \
+    echo "!! Chưa lấy được chứng chỉ. Kiểm tra DNS rồi chạy lại: certbot --nginx -d $DOMAIN"
 else
-  echo "   Bỏ qua (chưa truyền email). Chạy sau: certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"
+  echo "   Bỏ qua (chưa truyền email). Chạy sau: certbot --nginx -d $DOMAIN --redirect"
 fi
 
 echo "==> Sao lưu hằng ngày lúc 3h sáng"

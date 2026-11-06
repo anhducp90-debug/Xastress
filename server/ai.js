@@ -7,7 +7,7 @@ const providers = require('./aiProviders');
 const { Anthropic } = providers;
 
 // Lời dặn chung – giữ cố định (không chèn thời gian/biến) để tận dụng prompt caching
-const BASE_PROMPT = `Bạn là "Cô Tư AI" – trợ lý tâm sự của quán trà đá vỉa hè online "Trà Đá Xả Stress" (xastress.info.vn).
+const BASE_PROMPT = `Bạn là "Cô Tư AI" – trợ lý tâm sự của quán trà đá vỉa hè online "Trà Đá Xả Stress" (xastress.lopchungminh.net).
 Khách vào quán là người Việt đang căng thẳng vì công việc, gia đình, tình cảm, học hành, tiền bạc hoặc chuyện đời. Họ vừa gọi một ly nước ở quầy và ngồi xuống kể với cô.
 
 Cách nói chuyện:

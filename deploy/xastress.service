@@ -1,6 +1,6 @@
 # /etc/systemd/system/xastress.service
 [Unit]
-Description=Tra Da Xa Stress (xastress.info.vn)
+Description=Tra Da Xa Stress (xastress.lopchungminh.net)
 After=network.target
 
 [Service]
