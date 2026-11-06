@@ -1,0 +1,23 @@
+# Chạy: docker compose up -d --build
+# Container chỉ mở cổng cho chính VPS (127.0.0.1:3100) – reverse proxy đang chạy sẵn
+# (Nginx trên máy, hoặc container Nginx Proxy Manager/Traefik/Caddy) sẽ trỏ tên miền vào đây.
+services:
+  xastress:
+    build: .
+    image: xastress:latest
+    container_name: xastress
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DB_PATH: /app/data/xastress.db
+      TRUST_PROXY: 1
+      NODE_ENV: production
+    volumes:
+      - ./data:/app/data          # CSDL SQLite + khoá mã hoá data/.secret – nhớ sao lưu
+    ports:
+      - "127.0.0.1:${XASTRESS_PORT:-3100}:3000"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

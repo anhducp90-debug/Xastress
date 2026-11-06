@@ -163,6 +163,8 @@ npm test
 
 ## Triển khai lên VPS (Ubuntu 22.04 / 24.04)
 
+> 🐳 **VPS đã chạy sẵn các container/tên miền khác?** Dùng Docker: xem [deploy/DOCKER.md](deploy/DOCKER.md) (1 container riêng, nối vào reverse proxy có sẵn, không đụng site cũ). Cách bên dưới cài thẳng lên VPS trống.
+
 1. **Trỏ DNS**: tại nơi quản lý DNS của `lopchungminh.net`, tạo bản ghi
    `A  xastress  → <IP VPS>` (tức `xastress.lopchungminh.net`). Nếu dùng Cloudflare, để chế độ "DNS only" (đám mây xám) khi lấy chứng chỉ lần đầu.
 2. **Đưa mã nguồn lên VPS** và chạy script:
