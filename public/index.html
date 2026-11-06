@@ -16,7 +16,7 @@
 
   <!-- Thanh trên -->
   <header id="hud" class="hidden">
-    <div class="brand">☕ <b>Trà Đá Xả Stress</b> <span id="online" class="chip">0 người trong quán</span></div>
+    <div class="brand">☕ <b>Trà Đá Xả Stress</b> <span class="chip">👥 <span id="online">0</span><span class="olabel"> người trong quán</span></span></div>
     <nav>
       <button class="btn green" data-open="menu">🧋 <span>Gọi nước</span></button>
       <button class="btn" data-open="write">✍️ <span>Kể chuyện</span></button>
@@ -42,14 +42,15 @@
     </div>
     <section id="chatPanel" class="chat-panel" aria-label="Trò chuyện">
       <div class="chat-tabs">
-        <button type="button" class="ctab active" data-ch="public">🌐 Cả quán</button>
-        <span class="ctab-wrap"><button type="button" class="ctab" data-ch="table">🪑 Bàn</button><select id="tableSel" aria-label="Chọn bàn chủ đề"></select></span>
-        <button type="button" class="ctab" data-ch="dm">✉️ Riêng <span class="badge hidden" id="dmBadge">0</span></button>
+        <button type="button" class="ctab active" data-ch="public">🌐 <span class="tl">Cả quán</span></button>
+        <span class="ctab-wrap"><button type="button" class="ctab" data-ch="table">🪑 <span class="tl">Bàn</span></button><select id="tableSel" aria-label="Chọn bàn chủ đề"></select></span>
+        <button type="button" class="ctab" data-ch="dm">✉️ <span class="tl">Riêng</span> <span class="badge hidden" id="dmBadge">0</span></button>
         <button type="button" class="ctab-min" id="chatMin" title="Thu gọn / mở rộng">▾</button>
       </div>
       <div class="chat-log" id="chatLog" aria-live="polite"></div>
     </section>
     <form id="chatForm" autocomplete="off">
+      <button type="button" class="btn emo-toggle" id="emoToggle" title="Biểu cảm" aria-label="Biểu cảm">😊</button>
       <input id="chatInput" maxlength="300" placeholder="Nói với cả quán… (Enter)">
       <button class="btn" type="submit">Gửi</button>
     </form>

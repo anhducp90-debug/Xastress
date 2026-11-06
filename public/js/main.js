@@ -246,7 +246,7 @@ function connect() {
   socket.on('p:move', (p) => game.upsertPlayer(p));
   socket.on('p:update', (u) => game.updatePlayer(u));
   socket.on('p:leave', (sid) => game.removePlayer(sid));
-  socket.on('online', (n) => { $('#online').textContent = `${n} người trong quán`; });
+  socket.on('online', (n) => { $('#online').textContent = n; });
   socket.on('emote', (m) => game.emote(m.sid, m.e));
   socket.on('order', (o) => {
     const d = drinkById[o.drink];
@@ -717,9 +717,11 @@ const social = createSocial({
   drawAvatar: (c, a) => drawAvatarPreview(c, a),
 });
 social.setupPanel();
+$('#emoToggle').onclick = () => $('#chatbar').classList.toggle('emo-open');
 $('.emotes').onclick = (e) => {
   const b = e.target.closest('[data-emote]');
   if (!b || !socket) return;
+  $('#chatbar').classList.remove('emo-open');
   if (!social.isSeated()) return social.needOrder();
   socket.emit('emote', b.dataset.emote);
 };

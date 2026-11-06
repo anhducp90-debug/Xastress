@@ -62,7 +62,7 @@ export class Game3D {
     s.background = this.dayColor.clone();
     s.fog = new THREE.Fog(s.background.clone(), 40, 90);
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.5, 200);
-    this.dist = coarse ? 24 : 21;
+    this.dist = innerWidth / innerHeight < 0.8 ? 27 : coarse ? 24 : 21; // màn hình dọc: lùi camera để thấy nhiều bàn hơn
     this.camTarget = new THREE.Vector3(0, 0.8, 2);
 
     this.hemi = new THREE.HemisphereLight('#dff1ff', '#8a6a4a', 1.1);
@@ -118,6 +118,11 @@ export class Game3D {
 
     this.resize();
     addEventListener('resize', () => this.resize());
+    // HUD và khung chat che bớt màn hình -> dời tâm khung nhìn vào phần còn trống
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => this.resize());
+      for (const id of ['hud', 'chatbar']) { const el = document.getElementById(id); if (el) ro.observe(el); }
+    }
     this.bindInput();
     this.lastT = performance.now();
     r.setAnimationLoop(() => this.frame());
@@ -125,10 +130,23 @@ export class Game3D {
 
   resize() {
     const w = this.cv.clientWidth, h = this.cv.clientHeight;
+    if (!w || !h) return;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.fov = w / h < 0.8 ? 46 : 36;
-    this.camera.updateProjectionMatrix();
+    // Vùng nhìn thấy thật: giữa đáy HUD và đỉnh khung chat
+    const vis = (id) => { const el = document.getElementById(id); return el && !el.classList.contains('hidden') ? el.getBoundingClientRect() : null; };
+    const hud = vis('hud'), bar = vis('chatbar');
+    const top = hud ? Math.min(h * 0.3, hud.bottom) : 0;
+    const bottom = bar ? Math.max(h * 0.55, bar.top) : h;
+    this.chatTop = bottom;
+    const s = Math.round(h / 2 - (top + bottom) / 2); // >0: tâm vùng trống nằm cao hơn giữa màn hình
+    const H = h + 2 * Math.abs(s);
+    const cam = this.camera;
+    cam.aspect = w / H;
+    this.portrait = w / h < 0.8;
+    cam.fov = this.portrait ? 50 : 36;
+    if (s) cam.setViewOffset(w, H, 0, s > 0 ? 2 * s : 0, w, h); else cam.clearViewOffset();
+    cam.updateProjectionMatrix();
+    if (this.actBtn) this.actBtn.style.bottom = `${h - bottom + 8}px`;
   }
 
   // ---------- Người chơi ----------
@@ -543,9 +561,9 @@ export class Game3D {
   updateCamera(dt) {
     const me = this.me;
     const tx = me ? X(me.x) : 0, tz = me ? Z(me.y) - 1.8 : -1;
-    const want = new THREE.Vector3(Math.max(-13, Math.min(13, tx)), me ? 1.2 : 2.5, Math.max(-4, Math.min(5, tz)));
+    const want = new THREE.Vector3(Math.max(-13, Math.min(13, tx)), me ? 1.2 : 2.5, Math.max(-4, Math.min(this.portrait ? 3.5 : 5, tz)));
     this.camTarget.lerp(want, Math.min(1, dt * 4));
-    const el = 0.6;
+    const el = this.portrait ? 0.82 : 0.6; // màn hình dọc: nhìn dốc hơn để thấy nhiều nền quán, bớt phần đường
     const dist = me ? this.dist : 30;
     const cam = this.camera;
     cam.position.set(this.camTarget.x, this.camTarget.y + dist * Math.sin(el), this.camTarget.z + dist * Math.cos(el));
@@ -562,12 +580,17 @@ export class Game3D {
     }
     el._used = true;
     if (el._cls !== cls) { el.className = `lb ${cls}`; el._cls = cls; }
-    if (el._text !== text) { el.textContent = text; el._text = text; }
+    if (el._text !== text) { el.textContent = text; el._text = text; el._hw = 0; }
     const v = this.tmpV.copy(pos).project(this.camera);
     const w = this.cv.clientWidth, h = this.cv.clientHeight;
     if (v.z > 1 || v.x < -1.3 || v.x > 1.3 || v.y < -1.3 || v.y > 1.3) { el.style.display = 'none'; return; }
     el.style.display = '';
-    const x = ((v.x + 1) / 2) * w, y = ((1 - v.y) / 2) * h;
+    let x = ((v.x + 1) / 2) * w;
+    const y = ((1 - v.y) / 2) * h;
+    if (cls.startsWith('tbl') || cls === 'bubble') {
+      if (!el._hw) el._hw = el.offsetWidth / 2;
+      x = Math.max(el._hw + 4, Math.min(w - el._hw - 4, x));
+    }
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, ${extra && extra.below ? '30%' : '-100%'})${extra && extra.dy ? ` translateY(${extra.dy}px)` : ''}`;
     if (extra && extra.opacity !== undefined) el.style.opacity = extra.opacity; else el.style.opacity = '';
   }
@@ -576,6 +599,7 @@ export class Game3D {
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
     for (const t of Wd.TABLES) {
       const hov = this.hover && this.hover.type === 'table' && this.hover.id === t.id;
+      if (hov && this.touch) continue; // điện thoại: tên bàn đã nằm trên nút "Ngồi bàn", tránh đè lên tên người chơi
       const n = this.tableCounts[t.id] || 0;
       this.label(`t:${t.id}`, V(X(t.x), 1.25, Z(t.y)), `${t.icon} ${t.name}${n ? ` · ${n} 🍵` : ''}`, hov ? 'tbl hov' : 'tbl');
     }
@@ -608,11 +632,24 @@ export class Game3D {
       const k = (now - s.t0) / 1800;
       this.label(`s:${s.id}`, V(X(s.x), 0.8 + k * 1.5, Z(s.y)), '✨🍵✨', 'emote', { opacity: 1 - k });
     }
-    if (this.hover && this.me && !this.hooks.isUiOpen()) {
-      const label = this.hover.type === 'npc' ? 'Trò chuyện với Cô Tư' : `Ngồi bàn ${Wd.tableById[this.hover.id].name}`;
-      const touch = matchMedia('(pointer: coarse)').matches;
-      this.label('prompt', V(X(this.me.x), 0, Z(this.me.y)), touch ? `👆 Chạm để ${label.toLowerCase()}` : `[E] ${label}`, 'prompt', { below: true });
+    const showAct = this.hover && this.me && !this.hooks.isUiOpen();
+    const touch = this.touch ??= matchMedia('(pointer: coarse)').matches;
+    if (showAct) {
+      const label = this.hover.type === 'npc' ? '🍵 Trò chuyện với Cô Tư' : `🪑 Ngồi bàn ${Wd.tableById[this.hover.id].name}`;
+      if (!touch) this.label('prompt', V(X(this.me.x), 0, Z(this.me.y)), `[E] ${label}`, 'prompt', { below: true });
+      else {
+        // Điện thoại: nút bấm cố định ngay trên khung chat, không bị che
+        if (!this.actBtn) {
+          const b = (this.actBtn = document.createElement('button'));
+          b.id = 'actBtn'; b.type = 'button'; b.className = 'btn warm';
+          b.onclick = () => { if (this.hover) this.interact(this.hover); };
+          document.body.appendChild(b);
+          this.resize();
+        }
+        if (this.actBtn._t !== label) { this.actBtn.textContent = label; this.actBtn._t = label; }
+      }
     }
+    if (this.actBtn) this.actBtn.hidden = !(showAct && touch);
     for (const [k, el] of this.lbls) if (!el._used) { el.remove(); this.lbls.delete(k); }
   }
 

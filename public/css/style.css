@@ -374,3 +374,32 @@ a.btn { text-decoration: none; }
 .ledger summary { cursor: pointer; font-weight: 600; }
 .lrow { display: grid; grid-template-columns: 90px 1fr auto; gap: 8px; padding: 3px 0; border-bottom: 1px dashed #e6d6b4; }
 .lrow .plus { color: #2e7d32; } .lrow .minus { color: #b23a2a; }
+
+/* ===== Điện thoại: gọn HUD, chat, biểu cảm ===== */
+.emo-toggle { display: none; }
+#actBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 140px; z-index: 3; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  #hud { flex-wrap: nowrap; gap: 6px; padding: max(6px, env(safe-area-inset-top)) 8px 6px; align-items: center; }
+  .brand { padding: 4px 8px; flex: none; }
+  .brand .olabel { display: none; }
+  nav { flex-wrap: nowrap; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  nav .btn { padding: 5px 7px; font-size: 16px; flex: none; }
+  #chatbar { width: calc(100% - 16px); bottom: max(6px, env(safe-area-inset-bottom)); gap: 4px; }
+  .emo-toggle { display: inline-flex; padding: 4px 8px; font-size: 18px; }
+  #chatbar .emotes { display: none; flex-wrap: wrap; }
+  #chatbar.emo-open .emotes { display: flex; }
+  .chat-tabs { flex-wrap: nowrap; }
+  .ctab { white-space: nowrap; font-size: 12.5px; padding: 3px 6px; }
+  .ctab-wrap select { max-width: 130px; }
+  .chat-log { height: 96px; font-size: 13.5px; }
+  /* thu gọn: vẫn hiện tin nhắn mới nhất */
+  .chat-panel.collapsed .chat-log { display: flex; height: auto; max-height: 26px; overflow: hidden; justify-content: flex-end; padding: 3px 10px; }
+  .chat-panel.collapsed .chat-log .cm-npc { padding: 0 6px; margin: 0; }
+  #chatForm input { padding: 6px 10px; }
+  .lb.bubble { max-width: 180px; font-size: 12.5px; padding: 5px 8px; }
+}
+@media (max-width: 720px) {
+  .chat-panel.collapsed .chat-log .cm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+  .chat-panel.collapsed .chat-log .poll { display: none; }
+}
