@@ -59,7 +59,8 @@ async function overview() {
       <b>🤖 AI của Cô Tư:</b> ${ai.provider === 'none' ? '<span class="pill off">Tắt</span>' : '<span class="pill ok">Đang chạy</span>'} ${esc(PROV[ai.provider])}
       ${ai.provider !== 'none' ? `<span class="muted">· tâm sự: <code>${esc(ai.model)}</code> · hoạt náo &amp; kiểm duyệt: <code>${esc(ai.fastModel)}</code></span>` : ''}
       ${ai.chosen !== ai.provider ? `<div class="note red">Đã chọn ${esc(PROV[ai.chosen])} nhưng chưa có khoá API hợp lệ → Cô Tư đang dùng câu soạn sẵn.</div>` : ''}
-      <div class="muted">Hôm nay: ${fmt(calls)} lượt gọi AI, ${fmt(errs)} lỗi.</div>
+      <div class="muted">Hôm nay: ${fmt(calls)} lượt gọi AI, ${fmt(errs)} lỗi${ai.dailyCap ? ` · giới hạn ${fmt(ai.dailyCap)}/ngày` : ''}.</div>
+      ${ai.overCap ? '<div class="note red">Đã hết lượt AI hôm nay → Cô Tư đang dùng câu soạn sẵn. Tăng giới hạn ở mục AI cho Cô Tư nếu cần.</div>' : ''}
       <div><b>🎙️ Cô Tư hoạt náo:</b> ${o.cotu.enabled ? '<span class="pill ok">Bật</span>' : '<span class="pill off">Tắt</span>'}</div>
     </div>`;
   setBars(main);
@@ -99,6 +100,9 @@ async function aiTab() {
           <span class="muted" data-liveout="${k}"></span></div>
         </div>`).join('<hr>')}
       <p class="muted">Để trống ô khoá = giữ nguyên khoá đã lưu. Khoá được mã hoá khi lưu và không bao giờ hiển thị lại đầy đủ. Model tâm sự trả lời khách khi gọi ly; model hoạt náo &amp; kiểm duyệt chạy thường xuyên (chào khách, khơi chuyện, lọc lời nhắn) nên chọn loại nhanh, rẻ. Bấm “Tải model mới nhất” để lấy danh sách model mới nhất từ nhà cung cấp; chọn “✏️ Nhập tên khác…” nếu muốn gõ tên model.</p>
+      <label class="f">Giới hạn lượt gọi AI mỗi ngày (cả quán, 0 = không giới hạn) – hôm nay đã dùng ${fmt(s.usedToday)}
+        <input type="number" id="dailyCap" min="0" value="${esc(s.dailyCap)}"></label>
+      <p class="muted">Trần chi phí: hết lượt thì Cô Tư tự chuyển sang câu soạn sẵn đến 0h hôm sau. Mỗi khách tối đa 60 lượt tâm sự/ngày (AI_USER_DAILY).</p>
       <label class="f">Mức suy nghĩ (chỉ áp dụng cho Claude khi tâm sự)
         <select id="effort">${['low', 'medium', 'high'].map((x) => `<option ${s.effort === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <div class="row"><button class="btn primary" id="saveAi">💾 Lưu</button><button class="btn green" id="testAi">⚡ Thử gọi AI</button><span id="testOut" class="muted"></span></div>
@@ -150,7 +154,7 @@ async function aiTab() {
     main.querySelectorAll('[data-model]').forEach((i) => { (models[i.dataset.model] ||= {})[i.dataset.role] = i.dataset.cur; });
     const provider = (main.querySelector('input[name=prov]:checked') || {}).value;
     try {
-      const r = await api('/admin/settings/ai', { body: { provider, keys, models, effort: $('#effort').value } });
+      const r = await api('/admin/settings/ai', { body: { provider, keys, models, effort: $('#effort').value, dailyCap: Number($('#dailyCap').value) } });
       toast(r.active === 'none' && provider !== 'none' ? 'Đã lưu, nhưng nhà cung cấp này chưa có khoá API → Cô Tư dùng câu soạn sẵn.' : 'Đã lưu cài đặt AI ✓', r.active === 'none' && provider !== 'none');
       aiTab();
     } catch (err) { toast(err.message, true); }

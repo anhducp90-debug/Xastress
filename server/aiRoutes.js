@@ -77,9 +77,10 @@ router.post('/ai/packs/:id/chat', requireUser, async (req, res) => {
   const p = q.pack.get(int(req.params.id), req.user.id);
   const message = clean(req.body && req.body.message, 1000);
   if (!p) return res.status(404).json({ error: 'Không tìm thấy gói này.' });
-  if (!ai.isEnabled()) return res.status(503).json({ error: 'Cô Tư AI đang nghỉ.' });
+  if (!ai.isEnabled()) return res.status(503).json({ error: 'Hôm nay Cô Tư AI nói nhiều quá nên nghỉ giọng rồi, mai cô nghe tiếp nha. Con vẫn có thể kể ở bàn cho mọi người cùng nghe.' });
   if (p.expires_at < Date.now() || p.turns_left <= 0) return res.status(402).json({ error: 'Ly này uống hết rồi, gọi ly mới để tâm sự tiếp nha.', expired: true });
   if ([...message].length < 1) return res.status(400).json({ error: 'Con muốn kể gì với cô?' });
+  if (!hit(`aiday:${req.user.id}`, parseInt(process.env.AI_USER_DAILY || '60', 10), 24 * 3600e3)) return res.status(429).json({ error: 'Hôm nay con tâm sự với cô nhiều rồi, nghỉ ngơi chút, mai kể tiếp cô nghe nha 💛' });
   if (!hit(`ai:${req.user.id}`, 20, 10 * 60e3)) return res.status(429).json({ error: 'Từ từ thôi con, cô nghe không kịp. Nghỉ vài phút rồi kể tiếp nha.' });
 
   q.useTurn.run(p.id);

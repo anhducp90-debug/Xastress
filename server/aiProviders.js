@@ -37,8 +37,9 @@ const REFUSED = 'Chuyện này cô không nói tiếp được, con thông cảm
 
 // Thống kê dùng AI trong ngày (cho trang quản trị)
 const usage = { day: '', calls: {}, errors: {} };
+const vnDay = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 function track(provider, ok) {
-  const d = new Date().toISOString().slice(0, 10);
+  const d = vnDay();
   if (usage.day !== d) { usage.day = d; usage.calls = {}; usage.errors = {}; }
   const m = ok ? usage.calls : usage.errors;
   m[provider] = (m[provider] || 0) + 1;
@@ -59,7 +60,18 @@ function current() {
   const usable = provider !== 'none' && (!!key || (provider === 'anthropic' && !!env.ANTHROPIC_AUTH_TOKEN));
   return { provider: usable ? provider : 'none', chosen: provider, key, model: chatModel, chatModel, fastModel, effort };
 }
-const isEnabled = () => current().provider !== 'none';
+// Trần chi phí: tối đa N lượt gọi AI mỗi ngày (cả quán). Hết lượt thì Cô Tư dùng câu soạn sẵn tới 0h.
+function dailyCap() {
+  const s = settings.get('ai', {});
+  const v = s.dailyCap ?? parseInt(env.AI_DAILY_CAP || '3000', 10);
+  return Number.isFinite(v) && v > 0 ? v : 0; // 0 = không giới hạn
+}
+function usedToday() {
+  if (usage.day !== vnDay()) return 0;
+  return Object.values(usage.calls).reduce((a, b) => a + b, 0) + Object.values(usage.errors).reduce((a, b) => a + b, 0);
+}
+const overCap = () => { const c = dailyCap(); return c > 0 && usedToday() >= c; };
+const isEnabled = () => current().provider !== 'none' && !overCap();
 
 // ---------- Claude (Anthropic SDK) ----------
 // Tính năng theo model: fallback phía server (khi bộ lọc an toàn từ chối) chỉ có ở một số model;
@@ -199,6 +211,7 @@ const IMPL = { anthropic: A, openai: O, gemini: G };
 async function run(method, args) {
   const c = current();
   if (c.provider === 'none') throw new Error('AI chưa bật');
+  if (overCap()) throw new Error('Đã hết lượt AI hôm nay');
   try {
     const r = await IMPL[c.provider][method](c, args);
     track(c.provider, true);
@@ -242,4 +255,4 @@ async function listModels(provider) {
 }
 const stream = (args) => run('stream', args);
 
-module.exports = { complete, stream, isEnabled, current, listModels, usage, PROVIDERS, DEFAULT_MODELS, RECOMMENDED, Anthropic };
+module.exports = { complete, stream, isEnabled, current, dailyCap, usedToday, overCap, listModels, usage, PROVIDERS, DEFAULT_MODELS, RECOMMENDED, Anthropic };

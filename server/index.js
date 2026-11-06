@@ -3,6 +3,7 @@ const http = require('http');
 const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const { rateLimit } = require('express-rate-limit');
 const config = require('./config');
@@ -14,6 +15,8 @@ const posts = require('./posts');
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
+// Nén gzip: thư viện 3D ~2,1MB còn ~0,5MB. Không nén luồng SSE (Cô Tư AI trả lời từng chữ).
+app.use(compression({ filter: (req, res) => !/event-stream/.test(String(res.getHeader('Content-Type') || '')) && compression.filter(req, res) }));
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -78,7 +81,10 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy
 app.use('/vendor/three', express.static(path.join(path.dirname(require.resolve('three')), '..', 'build'), {
   maxAge: config.isProd ? '7d' : 0, index: false,
 }));
-app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: config.isProd ? '1h' : 0 }));
+// Mã của quán: luôn hỏi lại máy chủ (ETag → 304 nếu không đổi) để sau mỗi lần cập nhật không bị lẫn bản cũ/mới
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, file) => { res.setHeader('Cache-Control', /\.(png|jpe?g|svg|webp|ico|woff2?)$/.test(file) ? 'public, max-age=604800' : 'no-cache'); },
+}));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
@@ -95,5 +101,15 @@ if (require.main === module) {
   server.listen(config.port, config.host, () => {
     console.log(`☕ Xả Stress đang mở quán tại http://${config.host}:${config.port}`);
   });
+  // Đóng quán êm khi docker stop / systemctl restart: ngừng nhận kết nối, đóng CSDL gọn gàng
+  const shutdown = (sig) => {
+    console.log(`Nhận ${sig}, đóng quán…`);
+    require('./telegram').stop();
+    realtime.close();
+    server.close(() => { try { require('./db').close(); } catch { /* đã đóng */ } process.exit(0); });
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 module.exports = { app, server };

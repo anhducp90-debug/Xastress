@@ -7,7 +7,7 @@ const { checkKind, KIND_SUGGEST } = require('./kindcheck');
 const { requireSeated } = require('./seat');
 const ai = require('./ai');
 const { funnyReply, comboReply } = require('./funny');
-const { clean, maskBadWords, hasCrisisSignal } = require('./moderation');
+const { clean, maskBadWords, sanitize, hasCrisisSignal } = require('./moderation');
 const { requireUser, requireAdmin } = require('./auth');
 const { hit } = require('./ratelimit');
 const realtime = require('./realtime');
@@ -162,7 +162,7 @@ router.post('/posts', requireUser, requireSeated, (req, res) => {
     return res.status(429).json({ error: 'Uống chậm thôi! Bạn đã gửi khá nhiều tâm sự, nghỉ một lát rồi kể tiếp nhé.' });
   }
   const m = MOODS.includes(mood) ? mood : 'met';
-  const info = q.insertPost.run(req.user.id, tableId, m, maskBadWords(content), anonymous ? 1 : 0, Date.now());
+  const info = q.insertPost.run(req.user.id, tableId, m, sanitize(content), anonymous ? 1 : 0, Date.now());
   const post = shapePost(q.post.get(info.lastInsertRowid), req.user);
   realtime.broadcast('post:new', { id: post.id, tableId, mood: m });
   require('./host').onNewPost(post.id); // chưa ai hỏi han thì Cô Tư vào động viên
@@ -199,7 +199,7 @@ router.post('/posts/:id/comments', requireUser, requireSeated, (req, res) => {
   if (!hit(`comment:${req.user.id}`, 20, 10 * 60e3)) {
     return res.status(429).json({ error: 'Bạn nhiệt tình quá! Nghỉ tay một chút rồi viết tiếp nhé.' });
   }
-  q.insertComment.run(p.id, req.user.id, maskBadWords(content), Date.now());
+  q.insertComment.run(p.id, req.user.id, sanitize(content), Date.now());
   if (p.user_id !== req.user.id) {
     q.notify.run(p.user_id, 'comment', p.id, req.user.nickname, Date.now());
     realtime.notifyUser(p.user_id, { kind: 'comment', postId: p.id, actor: req.user.nickname });

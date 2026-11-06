@@ -48,7 +48,7 @@ router.get('/admin/overview', (_req, res) => {
     dmsToday: n('SELECT COUNT(*) n FROM dms WHERE created_at >= ?', t0),
     openReports: n('SELECT COUNT(DISTINCT target_type || target_id) n FROM reports'),
     payments: db.prepare('SELECT COUNT(*) count, COALESCE(SUM(stars),0) stars, COALESCE(SUM(xu),0) xu FROM payments').get(),
-    ai: { provider: ai.provider, chosen: ai.chosen, model: ai.chatModel, fastModel: ai.fastModel, usage: providers.usage },
+    ai: { provider: ai.provider, chosen: ai.chosen, model: ai.chatModel, fastModel: ai.fastModel, usage: providers.usage, dailyCap: providers.dailyCap(), usedToday: providers.usedToday(), overCap: providers.overCap() },
     cotu: { enabled: config.cotu.enabled },
   });
 });
@@ -59,7 +59,7 @@ router.get('/admin/settings', (_req, res) => {
   const c = providers.current();
   res.json({
     ai: {
-      provider: c.chosen, active: c.provider, effort: c.effort,
+      provider: c.chosen, active: c.provider, effort: c.effort, dailyCap: providers.dailyCap(), usedToday: providers.usedToday(),
       // models[p] = { chat: model tâm sự, fast: model hoạt náo & kiểm duyệt }
       models: Object.fromEntries(providers.PROVIDERS.map((p) => {
         const m = (s.models || {})[p];
@@ -100,6 +100,11 @@ router.post('/admin/settings/ai', (req, res) => {
       }
       next.models[p] = prev;
     }
+  }
+  if (b.dailyCap !== undefined) {
+    const n = parseInt(b.dailyCap, 10);
+    if (!(n >= 0 && n <= 1000000)) return res.status(400).json({ error: 'Giới hạn lượt AI mỗi ngày không hợp lệ.' });
+    next.dailyCap = n;
   }
   if (b.effort !== undefined) {
     if (!['low', 'medium', 'high'].includes(b.effort)) return res.status(400).json({ error: 'Mức suy nghĩ không hợp lệ.' });

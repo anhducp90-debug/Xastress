@@ -20,6 +20,25 @@ const crisisRe = new RegExp(CRISIS.map(esc).join('|'), 'iu');
 function maskBadWords(text) {
   return text.replace(badRe, (w) => w[0] + '*'.repeat(Math.max(1, [...w].length - 1)));
 }
+// Chặn rao vặt / lừa đảo / lộ thông tin cá nhân: số điện thoại, link, email, @tài khoản
+const CONTACT_RES = [
+  /\b(?:https?:\/\/|www\.)\S+/gi,
+  /\b[\w.+-]+@[\w-]+\.[\w.]+\b/g,
+  /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|vn|io|me|xyz|info|top|link|ly|gg|app|site|online|shop|store|club|biz|cc|tk|asia)(?:\/\S*)?/gi,
+  /(?<!\d)(?:\+?84|0)(?:[\s.\-]?\d){9}(?!\d)/g,
+  /(?<![\w@])@[A-Za-z0-9_.]{4,}/g,
+];
+const HIDDEN = '[🔒 đã ẩn liên hệ]';
+// Đường dây hỗ trợ được phép chia sẻ (Ngày Mai)
+const SAFE_NUMBERS = new Set(['0963061414']);
+function maskContacts(text) {
+  let t = text;
+  for (const re of CONTACT_RES) t = t.replace(re, (m) => (SAFE_NUMBERS.has(m.replace(/\D/g, '')) ? m : HIDDEN));
+  return t;
+}
+const hasContact = (text) => maskContacts(text) !== text;
+// Dùng cho mọi chữ khách đăng công khai / nhắn riêng
+const sanitize = (text) => maskContacts(maskBadWords(text));
 function hasCrisisSignal(text) {
   return crisisRe.test(text.normalize('NFC').toLowerCase());
 }
@@ -57,6 +76,7 @@ const negRe = new RegExp(`(?<![\\p{L}\\p{N}])(${NEGATIVE.map(esc).join('|')})(?!
 function screenKindMessage(text) {
   const t = text.normalize('NFC');
   if (maskBadWords(t) !== t) return { ok: false, hard: true, hits: ['ngôn từ thô tục'] };
+  if (hasContact(t)) return { ok: false, hard: true, hits: ['số điện thoại / link / tài khoản liên hệ'] };
   const hits = [];
   for (const m of t.matchAll(negRe)) {
     const before = t.slice(Math.max(0, m.index - 24), m.index);
@@ -65,4 +85,4 @@ function screenKindMessage(text) {
   return { ok: hits.length === 0, hard: false, hits };
 }
 
-module.exports = { maskBadWords, hasCrisisSignal, clean, screenKindMessage };
+module.exports = { maskBadWords, maskContacts, hasContact, sanitize, hasCrisisSignal, clean, screenKindMessage };

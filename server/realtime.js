@@ -2,7 +2,7 @@
 // Không gian quán realtime: nhân vật, chat 3 kênh (cả quán / theo bàn / tin riêng),
 // biểu cảm, và tương tác với người khác: động viên, an ủi, tặng nước.
 // Muốn chat hay tương tác thì phải "ngồi vào quán" = gọi 1 ly trong lượt vào quán này.
-const { maskBadWords, clean, hasCrisisSignal, screenKindMessage } = require('./moderation');
+const { maskBadWords, sanitize, clean, hasCrisisSignal, screenKindMessage } = require('./moderation');
 const { hit } = require('./ratelimit');
 const { DRINKS, TABLES } = require('./constants');
 
@@ -108,7 +108,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
       if (!t || !gate(ack)) return;
       if (channel !== 'public' && p.channel !== channel) return;
       if (!hit(`chat:${p.userId}`, 8, 15e3)) return reply(ack, { ok: false, error: 'Nói chậm thôi, mọi người nghe không kịp đâu ☺' });
-      const item = { channel, sid: p.sid, uid: p.userId, nickname: p.nickname, text: maskBadWords(t), at: Date.now() };
+      const item = { channel, sid: p.sid, uid: p.userId, nickname: p.nickname, text: sanitize(t), at: Date.now() };
       pushChat(item);
       if (hasCrisisSignal(t)) socket.emit('support');
       reply(ack, { ok: true });
@@ -131,7 +131,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
       if (isBlocked(p.userId, to.id)) return reply(ack, { ok: false, error: 'Không thể nhắn cho người này.' });
       if (!hit(`dm:${p.userId}`, 20, 60e3)) return reply(ack, { ok: false, error: 'Nhắn chậm lại chút nhé.' });
       const at = Date.now();
-      const text = maskBadWords(t);
+      const text = sanitize(t);
       const id = q.addDm.run(p.userId, to.id, text, at).lastInsertRowid;
       const item = { id, from: { uid: p.userId, nickname: p.nickname }, to: { uid: to.id, nickname: to.nickname }, text, at };
       io.to(`user:${to.id}`).emit('dm', item);
@@ -263,4 +263,4 @@ function stats() {
 }
 function getHistory(ch) { return (history.get(ch) || []).slice(); }
 
-module.exports = { init, broadcast, notifyUser, kickUser, seated, stats, getHistory, WORLD, CHANNELS };
+module.exports = { close: () => io && io.close(), init, broadcast, notifyUser, kickUser, seated, stats, getHistory, WORLD, CHANNELS };

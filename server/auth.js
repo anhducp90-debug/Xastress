@@ -90,7 +90,7 @@ function validNick(n) {
   return nick;
 }
 
-function register(req, res) {
+async function register(req, res) {
   const { username, password, nickname, avatar } = req.body || {};
   if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
     return res.status(400).json({ error: 'Tên đăng nhập 3–24 ký tự: chữ không dấu, số, dấu _ hoặc .' });
@@ -102,8 +102,10 @@ function register(req, res) {
   const nick = nickname ? validNick(nickname) : randomNick();
   if (!nick) return res.status(400).json({ error: 'Biệt danh 2–32 ký tự, lịch sự một chút nhé.' });
   const isAdmin = config.adminUsernames.includes(username.toLowerCase()) ? 1 : 0;
-  const hash = bcrypt.hashSync(password, 11);
-  const info = q.insertUser.run(username, hash, nick, JSON.stringify(sanitizeAvatar(avatar)), isAdmin, Date.now());
+  const hash = await bcrypt.hash(password, 11); // bất đồng bộ: không chặn chat của cả quán khi có người đăng ký
+  let info;
+  try { info = q.insertUser.run(username, hash, nick, JSON.stringify(sanitizeAvatar(avatar)), isAdmin, Date.now()); }
+  catch (err) { if (/UNIQUE/.test(err.message)) return res.status(409).json({ error: 'Tên đăng nhập đã có người dùng.' }); throw err; }
   // Khách mới: ví 0 xu + 1 phiếu gọi ly miễn phí (dùng khi quán đã thu phí; gọi ly luôn kèm 1 ly để tặng)
   db.prepare('UPDATE users SET xu = 0, voucher_self = ?, voucher_gift = 0 WHERE id = ?').run(ECONOMY.welcomeSelf, info.lastInsertRowid);
   require('./economy').resetCache();
@@ -114,13 +116,13 @@ function register(req, res) {
 // Hash giả để chống dò tên đăng nhập qua thời gian phản hồi
 const DUMMY_HASH = bcrypt.hashSync('khong-phai-mat-khau', 11);
 
-function login(req, res) {
+async function login(req, res) {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string') {
     return res.status(400).json({ error: 'Thiếu thông tin.' });
   }
   const u = q.userByName.get(username);
-  const ok = bcrypt.compareSync(password, u ? u.pass_hash : DUMMY_HASH);
+  const ok = await bcrypt.compare(password, u ? u.pass_hash : DUMMY_HASH);
   if (!u || !ok) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu.' });
   if (u.banned) return res.status(403).json({ error: 'Tài khoản đã bị tạm khoá do vi phạm nội quy quán.' });
   // Đồng bộ quyền admin theo cấu hình
@@ -150,24 +152,24 @@ function updateProfile(req, res) {
   res.json({ user: publicUser(q.userById.get(req.user.id)) });
 }
 
-function changePassword(req, res) {
+async function changePassword(req, res) {
   const { oldPassword, newPassword } = req.body || {};
-  if (typeof oldPassword !== 'string' || !bcrypt.compareSync(oldPassword, req.user.pass_hash)) {
+  if (typeof oldPassword !== 'string' || !await bcrypt.compare(oldPassword, req.user.pass_hash)) {
     return res.status(400).json({ error: 'Mật khẩu cũ không đúng.' });
   }
   if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
     return res.status(400).json({ error: 'Mật khẩu mới cần từ 8 ký tự trở lên.' });
   }
-  q.updatePass.run(bcrypt.hashSync(newPassword, 11), req.user.id);
+  q.updatePass.run(await bcrypt.hash(newPassword, 11), req.user.id);
   q.delUserSessions.run(req.user.id);
   createSession(res, req.user.id);
   res.json({ ok: true });
 }
 
 // Quyền được lãng quên: xoá tài khoản cùng toàn bộ dữ liệu
-function deleteAccount(req, res) {
+async function deleteAccount(req, res) {
   const { password } = req.body || {};
-  if (typeof password !== 'string' || !bcrypt.compareSync(password, req.user.pass_hash)) {
+  if (typeof password !== 'string' || !await bcrypt.compare(password, req.user.pass_hash)) {
     return res.status(400).json({ error: 'Mật khẩu không đúng.' });
   }
   q.deleteUser.run(req.user.id);
