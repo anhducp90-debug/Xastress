@@ -27,6 +27,9 @@ module.exports = {
     users: parseInt(env.PAYWALL_USERS || '200', 10),
     mode: ['on', 'off'].includes(env.PAYWALL_MODE) ? env.PAYWALL_MODE : 'auto',
   },
+  // Mỗi lượt vào quán phải gọi 1 ly mới được chat/đăng bài/tặng nước (SEAT_GATE=0 để tắt)
+  seatGate: env.SEAT_GATE !== '0',
+  visitGapMinutes: parseInt(env.VISIT_GAP_MINUTES || '30', 10), // vắng quá lâu thì tính là lượt vào quán mới
   telegram: {
     token: env.TELEGRAM_BOT_TOKEN || '',
     username: (env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, ''),

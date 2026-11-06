@@ -2,6 +2,7 @@
 import { Game } from './game.js';
 import { TABLES, tableById } from './world.js';
 import { createMenu, drinkById, treatChips } from './menu.js';
+import { createSocial } from './social.js';
 import { drawAvatarPreview as drawAvatar2D, AVATAR_OPTIONS, AVATAR_LABELS, PALETTE, HAIR_NAMES, HAT_NAMES } from './sprites.js';
 
 let drawAvatarPreview = drawAvatar2D;
@@ -36,6 +37,7 @@ async function api(path, opts = {}) {
   });
   let data = {};
   try { data = await res.json(); } catch { /* bỏ qua */ }
+  if (res.status === 403 && data.needOrder) setTimeout(() => menu.openMenu(), 300); // chưa gọi ly trong lượt vào quán này
   if (!res.ok) { const e = new Error(data.error || 'Có lỗi xảy ra, thử lại nhé.'); e.data = data; e.status = res.status; throw e; }
   return data;
 }
@@ -72,7 +74,7 @@ const SUPPORT_HTML = html`
 function notifText(kind, live, qty = 1) {
   const [k, v] = kind.split(':');
   if (k === 'comment') return live ? 'vừa gửi lời động viên cho bạn 💌' : 'đã gửi lời động viên 💌';
-  if (k === 'treat') { const d = drinkById[v]; return d ? `${live ? 'vừa ' : 'đã '}mời bạn ${qty} ly ${d.name.toLowerCase()} ${d.icon}` : `đã mời bạn ${qty} ly nước 🍵`; }
+  if (k === 'treat' || k === 'gift') { const d = drinkById[v]; return d ? `${live ? 'vừa ' : 'đã '}mời bạn ${qty} ly ${d.name.toLowerCase()} ${d.icon}` : `đã mời bạn ${qty} ly nước 🍵`; }
   return live ? `vừa ${REACTS[v] || 'thả tim'} tâm sự của bạn` : `đã bày tỏ ${REACTS[v] || ''}`;
 }
 
@@ -229,6 +231,7 @@ function showAuth() {
 function connect() {
   if (socket) socket.disconnect();
   socket = window.io({ withCredentials: true });
+  social.bindSocket(socket);
   socket.on('connect_error', (err) => {
     if (err.message === 'unauthorized') { toast('Phiên đăng nhập đã hết, mời bạn vào quán lại.', true); showAuth(); }
   });
@@ -244,7 +247,6 @@ function connect() {
   socket.on('p:update', (u) => game.updatePlayer(u));
   socket.on('p:leave', (sid) => game.removePlayer(sid));
   socket.on('online', (n) => { $('#online').textContent = `${n} người trong quán`; });
-  socket.on('chat', (m) => game.say(m.sid, m.text));
   socket.on('emote', (m) => game.emote(m.sid, m.e));
   socket.on('order', (o) => {
     const d = drinkById[o.drink];
@@ -701,16 +703,17 @@ document.addEventListener('click', (e) => {
   if (!me && !['support', 'rules'].includes(b.dataset.open)) return;
   OPENERS[b.dataset.open]();
 });
-$('#chatForm').onsubmit = (e) => {
-  e.preventDefault();
-  const v = $('#chatInput').value.trim();
-  if (v && socket) socket.emit('chat', v);
-  $('#chatInput').value = '';
-  $('#chatInput').blur();
-};
+const social = createSocial({
+  $, html, raw, api, toast, openModal, closeModal, menu,
+  getGame: () => game, getSocket: () => socket, getMe: () => me,
+  drawAvatar: (c, a) => drawAvatarPreview(c, a),
+});
+social.setupPanel();
 $('.emotes').onclick = (e) => {
   const b = e.target.closest('[data-emote]');
-  if (b && socket) socket.emit('emote', b.dataset.emote);
+  if (!b || !socket) return;
+  if (!social.isSeated()) return social.needOrder();
+  socket.emit('emote', b.dataset.emote);
 };
 
 // ---------- Khởi động ----------
@@ -736,8 +739,9 @@ function boot() {
     }
     game = new GameClass($('#game'), {
       onMove: (m) => socket && socket.connected && socket.volatile.emit('move', m),
-      onTable: (id) => openTable(id),
+      onTable: (id) => { social.sitAt(id); openTable(id); },
       onNpc: () => openNpc(false),
+      onPlayer: (sid) => social.openPlayer(sid),
       isUiOpen: isModalOpen,
     });
     window.__game = game; // tiện debug trên console

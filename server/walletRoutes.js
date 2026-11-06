@@ -14,6 +14,7 @@ router.get('/economy', (_req, res) => res.json(economy.status()));
 router.get('/wallet', requireUser, (req, res) => {
   res.json({
     ...economy.wallet(req.user.id),
+    seated: economy.isSeated(req.user.id),
     economy: economy.status(),
     telegram: { enabled: telegram.enabled(), linked: telegram.linkInfo(req.user.id), bot: telegram.botUsername(), packages: XU_PACKAGES },
   });

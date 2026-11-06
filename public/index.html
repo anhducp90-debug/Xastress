@@ -40,12 +40,21 @@
       <button data-emote="laugh" title="Cười">😂</button>
       <button data-emote="sad" title="Buồn">😢</button>
     </div>
+    <section id="chatPanel" class="chat-panel" aria-label="Trò chuyện">
+      <div class="chat-tabs">
+        <button type="button" class="ctab active" data-ch="public">🌐 Cả quán</button>
+        <span class="ctab-wrap"><button type="button" class="ctab" data-ch="table">🪑 Bàn</button><select id="tableSel" aria-label="Chọn bàn chủ đề"></select></span>
+        <button type="button" class="ctab" data-ch="dm">✉️ Riêng <span class="badge hidden" id="dmBadge">0</span></button>
+        <button type="button" class="ctab-min" id="chatMin" title="Thu gọn / mở rộng">▾</button>
+      </div>
+      <div class="chat-log" id="chatLog" aria-live="polite"></div>
+    </section>
     <form id="chatForm" autocomplete="off">
-      <input id="chatInput" maxlength="120" placeholder="Nói gì đó với mọi người trong quán… (Enter)">
+      <input id="chatInput" maxlength="300" placeholder="Nói với cả quán… (Enter)">
       <button class="btn" type="submit">Gửi</button>
     </form>
   </footer>
-  <div id="help" class="hidden">🕹️ Di chuyển: <b>WASD/←↑→↓</b> hoặc <b>nhấp/chạm</b> · Lăn chuột/chụm 2 ngón để phóng to · Đến gần bàn bấm <b>E</b> để ngồi</div>
+  <div id="help" class="hidden">🕹️ Di chuyển: <b>WASD/←↑→↓</b> hoặc <b>nhấp/chạm</b> · <b>Bấm vào người khác</b> để động viên, tặng nước, nhắn riêng · Lăn chuột/chụm 2 ngón để phóng to · Đến gần bàn bấm <b>E</b> để ngồi</div>
 
   <!-- Màn hình vào quán -->
   <section id="auth" class="overlay">

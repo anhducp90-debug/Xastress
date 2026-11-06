@@ -132,6 +132,7 @@ export function createMenu(ctx) {
     openModal(html`
       <div class="menu-board">
         <h2 class="chalk-title">🍵 Thực đơn quán Cô Tư</h2>
+        ${w && !w.seated ? html`<div class="gate-banner">☕ Chào bạn ghé quán! Mỗi lần vào quán, mời bạn <b>gọi 1 ly</b> để ngồi xuống – gọi xong là trò chuyện, kể chuyện, động viên và tặng nước cho mọi người.</div>` : ''}
         ${w ? walletBar(w) : ''}
         <p class="chalk-sub">${st.enabled
           ? `Mỗi ly là một gói tâm sự với Cô Tư AI (${st.turns} lượt, dùng trong ${st.hours} giờ) kèm bài tập giải toả. Hôm nay bạn thấy thế nào?`
@@ -181,6 +182,7 @@ export function createMenu(ctx) {
   // Gọi 1 ly = uống 1 ly (mở gói Cô Tư AI) + tặng kèm 1 ly vào khay
   async function renderOrderBar(id, st, current) {
     const bar = $('#orderBar');
+    if (!bar) return;
     const [w, pk, qt] = await Promise.all([api('/wallet'), api('/ai/packs'), quote(id)]);
     if (!bar.isConnected) return;
     const pack = st.enabled && pk.packs.find((p) => p.drink === id);
@@ -210,6 +212,7 @@ export function createMenu(ctx) {
       return;
     }
     const pk = await api('/ai/packs');
+    if (!box || !box.isConnected) return;
     const pack = pk.packs.find((p) => p.drink === drink);
     if (!pack) {
       box.innerHTML = html`<div class="ai-buy"><p>👆 Gọi 1 ly ở trên để mở <b>${st.turns} lượt tâm sự</b> với Cô Tư AI (dùng trong ${st.hours} giờ).</p>${PRIVACY}</div>`.s;
@@ -222,7 +225,9 @@ export function createMenu(ctx) {
 
   async function aiChat(pack) {
     const box = $('#activity');
+    if (!box) return;
     const { messages } = await api(`/ai/packs/${pack.id}`);
+    if (!box.isConnected) return; // khách đã đóng hộp thoại
     const until = new Date(pack.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     box.innerHTML = html`
       <div class="ai-chat">

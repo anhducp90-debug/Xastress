@@ -3,7 +3,8 @@ const express = require('express');
 const db = require('./db');
 const { TABLES, MOODS, REACTIONS, DRINKS } = require('./constants');
 const economy = require('./economy');
-const { screenKindMessage } = require('./moderation');
+const { checkKind, KIND_SUGGEST } = require('./kindcheck');
+const { requireSeated } = require('./seat');
 const ai = require('./ai');
 const { funnyReply, comboReply } = require('./funny');
 const { clean, maskBadWords, hasCrisisSignal } = require('./moderation');
@@ -55,7 +56,10 @@ const q = {
     WHERE t.post_id = ? AND t.message != '' ORDER BY t.id DESC LIMIT 40`),
   insertTreat: db.prepare('INSERT INTO treats (post_id, from_user, to_user, drink, qty, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   notifyTreat: db.prepare('INSERT INTO notifications (user_id, kind, post_id, actor, message, qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
-  myTreatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE to_user = ? GROUP BY drink'),
+  myTreatCounts: db.prepare(`SELECT drink, SUM(qty) n FROM (SELECT drink, qty FROM treats WHERE to_user = ?
+    UNION ALL SELECT drink, qty FROM direct_gifts WHERE to_user = ?) GROUP BY drink`),
+  myDirectNotes: db.prepare(`SELECT g.drink, g.qty, g.message, g.created_at, u.nickname FROM direct_gifts g JOIN users u ON u.id = g.from_user
+    WHERE g.to_user = ? ORDER BY g.id DESC LIMIT 40`),
   myTreatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, t.post_id, u.nickname, substr(p.content, 1, 60) preview
     FROM treats t JOIN users u ON u.id = t.from_user JOIN posts p ON p.id = t.post_id
     WHERE t.to_user = ? ORDER BY t.id DESC LIMIT 40`),
@@ -148,7 +152,7 @@ router.get('/posts/:id', (req, res) => {
   res.json({ post: shapePost(p, req.user, { full: true }) });
 });
 
-router.post('/posts', requireUser, (req, res) => {
+router.post('/posts', requireUser, requireSeated, (req, res) => {
   const { tableId, mood, anonymous } = req.body || {};
   if (!TABLES[tableId]) return res.status(400).json({ error: 'Chọn bàn để ngồi đã nhé.' });
   const content = clean(req.body && req.body.content, 3000);
@@ -163,7 +167,7 @@ router.post('/posts', requireUser, (req, res) => {
   res.json({ post });
 });
 
-router.post('/posts/:id/react', requireUser, (req, res) => {
+router.post('/posts/:id/react', requireUser, requireSeated, (req, res) => {
   const p = q.post.get(int(req.params.id));
   const { kind } = req.body || {};
   if (!p || p.hidden) return res.status(404).json({ error: 'Không tìm thấy tâm sự này.' });
@@ -185,7 +189,7 @@ router.post('/posts/:id/react', requireUser, (req, res) => {
   res.json({ added, reactions: post.reactions, myReactions: post.myReactions });
 });
 
-router.post('/posts/:id/comments', requireUser, (req, res) => {
+router.post('/posts/:id/comments', requireUser, requireSeated, (req, res) => {
   const p = q.post.get(int(req.params.id));
   if (!p || p.hidden) return res.status(404).json({ error: 'Không tìm thấy tâm sự này.' });
   const content = clean(req.body && req.body.content, 1000);
@@ -202,25 +206,7 @@ router.post('/posts/:id/comments', requireUser, (req, res) => {
 });
 
 // Mời người kể chuyện một hoặc nhiều ly nước, kèm lời nhắn (đã kiểm duyệt)
-const KIND_SUGGEST = [
-  'Mình hiểu cảm giác này, bạn không một mình đâu.', 'Bạn đã cố gắng nhiều lắm rồi.',
-  'Nghỉ ngơi chút đi, mọi chuyện rồi sẽ ổn.', 'Uống ly nước cho mát, rồi mình tính tiếp nha.',
-];
-async function checkKind(message) {
-  const local = screenKindMessage(message);
-  if (local.hard) return { ok: false, reason: 'Lời nhắn có từ ngữ thô tục.' };
-  if (ai.isEnabled()) {
-    try {
-      const r = await ai.classifyKindMessage(message);
-      return { ok: r.verdict === 'ok', reason: r.reason };
-    } catch (err) {
-      console.warn('Phân loại lời nhắn bằng AI lỗi, dùng bộ lọc từ khoá:', err.status || err.name);
-    }
-  }
-  return { ok: local.ok, reason: local.ok ? '' : `Có cụm từ dễ làm người nhận buồn lòng: "${local.hits.join('", "')}".` };
-}
-
-router.post('/posts/:id/treat', requireUser, async (req, res) => {
+router.post('/posts/:id/treat', requireUser, requireSeated, async (req, res) => {
   const p = q.post.get(int(req.params.id));
   const { drink } = req.body || {};
   const qty = Math.max(1, Math.min(100, parseInt(req.body && req.body.qty, 10) || 1));
@@ -272,10 +258,12 @@ router.post('/posts/:id/treat', requireUser, async (req, res) => {
 // Quầy quà của tôi: tổng số ly nhận được theo món + lời nhắn
 router.get('/me/treats', requireUser, (req, res) => {
   res.json({
-    treats: treatSummary(q.myTreatCounts.all(req.user.id)),
+    treats: treatSummary(q.myTreatCounts.all(req.user.id, req.user.id)),
     notes: q.myTreatNotes.all(req.user.id).map((t) => ({
       drink: t.drink, qty: t.qty, message: t.message, from: t.nickname, createdAt: t.created_at, postId: t.post_id, preview: t.preview,
-    })),
+    })).concat(q.myDirectNotes.all(req.user.id).map((t) => ({
+      drink: t.drink, qty: t.qty, message: t.message, from: t.nickname, createdAt: t.created_at, direct: true,
+    }))).sort((x, y) => y.createdAt - x.createdAt).slice(0, 40),
   });
 });
 
@@ -362,3 +350,4 @@ router.post('/admin/ban', requireAdmin, (req, res) => {
 });
 
 module.exports = router;
+module.exports.treatSummary = treatSummary;

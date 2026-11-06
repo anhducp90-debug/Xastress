@@ -29,6 +29,8 @@ const q = {
   addXu: db.prepare('UPDATE users SET xu = xu + ? WHERE id = ?'),
   logOrder: db.prepare('INSERT INTO orders (user_id, drink, method, created_at) VALUES (?, ?, ?, ?)'),
   freeToday: db.prepare("SELECT COUNT(*) n FROM orders WHERE user_id = ? AND method = 'free' AND created_at > ?"),
+  lastOrder: db.prepare('SELECT MAX(created_at) t FROM orders WHERE user_id = ?'),
+  visit: db.prepare('SELECT visit_start FROM users WHERE id = ?'),
 };
 
 let cache = { at: 0, n: 0 };
@@ -74,7 +76,8 @@ function quoteOrder(userId, drink) {
   const c = cupOf(userId, drink);
   const price = DRINK_INFO[drink].price;
   let plan;
-  if (!isPaywall()) plan = { method: 'free', bonus: 1, xu: 0 };
+  // Miễn phí: quá FREE_ORDERS_PER_DAY ly/ngày thì vẫn được uống (để vào quán) nhưng không kèm ly tặng
+  if (!isPaywall()) plan = { method: 'free', bonus: q.freeToday.get(userId, Date.now() - 86400e3).n >= FREE_ORDERS_PER_DAY ? 0 : 1, xu: 0 };
   else if (c.glass > 0) plan = { method: 'glass', bonus: 0, xu: 0 };
   else if (u.voucher_self > 0) plan = { method: 'voucher', bonus: 1, xu: 0 };
   else plan = { method: 'xu', bonus: 1, xu: price };
@@ -88,7 +91,6 @@ function quoteOrder(userId, drink) {
 // Gọi BÊN TRONG db.transaction
 function order(userId, drink) {
   const plan = quoteOrder(userId, drink);
-  if (plan.method === 'free' && q.freeToday.get(userId, Date.now() - 86400e3).n >= FREE_ORDERS_PER_DAY) throw new TooManyFree();
   if (!plan.enough) throw new NeedXu(plan.xu, plan.balance);
   q.ensure.run(userId, drink);
   if (plan.method === 'glass') q.setGlass.run(0, userId, drink);
@@ -122,7 +124,14 @@ function receive(userId, drink, qty) {
 
 function addXu(userId, xu) { q.addXu.run(xu, userId); }
 
+// "Đã ngồi vào quán": có gọi ít nhất 1 ly kể từ lúc bắt đầu lượt vào quán hiện tại
+function isSeated(userId) {
+  if (!config.seatGate) return true;
+  const last = q.lastOrder.get(userId).t;
+  return !!last && last >= q.visit.get(userId).visit_start;
+}
+
 module.exports = {
-  isPaywall, status, wallet, quoteOrder, order, giftable, give, receive, addXu,
+  isPaywall, status, wallet, quoteOrder, order, giftable, give, receive, addXu, isSeated,
   NeedXu, NoCups, TooManyFree, participants, resetCache, FREE_ORDERS_PER_DAY,
 };

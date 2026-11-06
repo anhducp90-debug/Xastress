@@ -100,6 +100,35 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, created_at);
+-- Tin nhắn riêng giữa hai người trong quán (tự xoá sau 30 ngày)
+CREATE TABLE IF NOT EXISTS dms (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_user   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text        TEXT NOT NULL,
+  is_read     INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dms_pair ON dms(from_user, to_user, id);
+CREATE INDEX IF NOT EXISTS idx_dms_to ON dms(to_user, is_read);
+-- Chặn: người bị chặn không nhắn riêng / động viên / tặng nước được cho mình
+CREATE TABLE IF NOT EXISTS blocks (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, blocked_id)
+);
+-- Tặng nước trực tiếp cho người đang ở trong quán (bấm vào nhân vật)
+CREATE TABLE IF NOT EXISTS direct_gifts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_user   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  drink       TEXT NOT NULL,
+  qty         INTEGER NOT NULL,
+  message     TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dgifts_to ON direct_gifts(to_user, created_at DESC);
 -- Liên kết tài khoản quán với Telegram (để mua xu qua bot)
 CREATE TABLE IF NOT EXISTS tg_links (
   user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -152,6 +181,8 @@ addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 0');          // ví xu (mua 
 addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");    // (cũ, không dùng nữa)
 addColumn('users', 'voucher_self', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí cho mình
 addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // (cũ, không dùng nữa: ly tặng kèm khi gọi thay thế)
+addColumn('users', 'visit_start', 'INTEGER NOT NULL DEFAULT 0'); // lúc bắt đầu lượt vào quán hiện tại
+addColumn('users', 'last_seen', 'INTEGER NOT NULL DEFAULT 0');   // lúc rời quán gần nhất
 addColumn('cups', 'glass', 'INTEGER NOT NULL DEFAULT 0');         // 1 = đang có "ly của mình" món này để uống
 addColumn('notifications', 'message', "TEXT NOT NULL DEFAULT ''");
 addColumn('notifications', 'qty', 'INTEGER NOT NULL DEFAULT 1');
@@ -162,6 +193,7 @@ const purgeAi = db.prepare('DELETE FROM ai_packs WHERE expires_at < ?');
 // Dọn phiên hết hạn định kỳ
 const purge = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
 const purgeCodes = db.prepare('DELETE FROM tg_codes WHERE expires_at < ?');
-setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); purgeCodes.run(Date.now()); }, 60 * 60 * 1000).unref();
+const purgeDms = db.prepare('DELETE FROM dms WHERE created_at < ?');
+setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); purgeCodes.run(Date.now()); purgeDms.run(Date.now() - 30 * 86400e3); }, 60 * 60 * 1000).unref();
 
 module.exports = db;

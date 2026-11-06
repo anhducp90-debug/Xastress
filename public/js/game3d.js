@@ -135,6 +135,8 @@ export class Game3D {
   makeModel(p) {
     const m = makeCharacter(p.avatar || {});
     m.position.set(X(p.x), 0, Z(p.y));
+    m.userData.type = 'player';
+    m.userData.sid = p.sid;
     this.scene.add(m);
     return m;
   }
@@ -157,10 +159,13 @@ export class Game3D {
   updatePlayer(u) {
     const p = this.players.get(u.sid);
     if (!p) return;
-    p.nickname = u.nickname;
-    p.avatar = u.avatar;
-    this.scene.remove(p.model);
-    p.model = this.makeModel(p);
+    if (u.nickname) p.nickname = u.nickname;
+    if ('seated' in u) p.seated = u.seated;
+    if (u.avatar && JSON.stringify(u.avatar) !== JSON.stringify(p.avatar)) {
+      p.avatar = u.avatar;
+      this.scene.remove(p.model);
+      p.model = this.makeModel(p);
+    }
   }
   removePlayer(sid) {
     const p = this.players.get(sid);
@@ -252,7 +257,7 @@ export class Game3D {
       const hit = this.pick(e.clientX, e.clientY);
       if (!hit) return;
       const target = hit.target;
-      if (target && (target.type === 'xeom' || target.type === 'vendor')) { this.interact(target); return; }
+      if (target && ['xeom', 'vendor', 'player'].includes(target.type)) { this.interact(target); return; }
       if (target) {
         const near = this.nearestApproach(target);
         if (Math.hypot(this.me.x - near.x, this.me.y - near.y) < 6) { this.interact(target); return; }
@@ -267,11 +272,16 @@ export class Game3D {
     const rect = this.cv.getBoundingClientRect();
     const ndc = new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const hits = this.raycaster.intersectObjects(this.world.interactive, true);
+    const others = [...this.players.values()].filter((p) => p !== this.me && p.model).map((p) => p.model);
+    const hits = this.raycaster.intersectObjects([...others, ...this.world.interactive], true);
     for (const h of hits) {
       let o = h.object;
       while (o && !(o.userData && o.userData.type)) o = o.parent;
-      if (o) return { target: o.userData.type === 'table' ? { type: 'table', id: o.userData.id } : { type: o.userData.type } };
+      if (!o) continue;
+      const t = o.userData;
+      if (t.type === 'table') return { target: { type: 'table', id: t.id } };
+      if (t.type === 'player') return { target: { type: 'player', sid: t.sid } };
+      return { target: { type: t.type } };
     }
     const p = this.raycaster.ray.intersectPlane(this.ground, this.tmpV);
     if (!p) return null;
@@ -312,6 +322,8 @@ export class Game3D {
     } else if (target.type === 'npc') {
       this.me.dir = 'up';
       this.hooks.onNpc();
+    } else if (target.type === 'player') {
+      this.hooks.onPlayer(target.sid);
     } else if (target.type === 'xeom') {
       this.npcSay('xeom', XEOM_LINES[(Math.random() * XEOM_LINES.length) | 0]);
     } else if (target.type === 'vendor') {
@@ -579,7 +591,7 @@ export class Game3D {
     }
     for (const p of this.players.values()) {
       const head = V(X(p.x), p.sit ? 2.05 : 2.35, Z(p.y));
-      this.label(`p:${p.sid}`, head, p.nickname, p === this.me ? 'name me' : 'name');
+      this.label(`p:${p.sid}`, head, `${p.seated ? '☕ ' : ''}${p.nickname}`, p === this.me ? 'name me' : 'name');
       const b = this.bubbles.get(p.sid);
       if (b && b.until > now) this.label(`pb:${p.sid}`, head, b.text, 'bubble', { dy: -22 });
       else if (b) this.bubbles.delete(p.sid);

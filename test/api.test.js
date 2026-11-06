@@ -10,6 +10,7 @@ process.env.DB_PATH = path.join(tmp, 'test.db');
 process.env.ADMIN_USERNAMES = 'quanly';
 process.env.AI_ENABLED = '0'; // test không gọi API thật
 process.env.AUTH_RATE_LIMIT = '1000';
+process.env.SEAT_GATE = '0'; // test riêng bên dưới bật lại luật "gọi ly mới vào quán"
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.TELEGRAM_BOT_USERNAME = 'xastress_bot';
 const { server } = require('../server/index.js');
@@ -21,7 +22,7 @@ after(() => { server.close(); fs.rmSync(tmp, { recursive: true, force: true }); 
 
 function client() {
   let cookie = '';
-  return async (p, body, method) => {
+  const fn = async (p, body, method) => {
     const res = await fetch(base + '/api' + p, {
       method: method || (body ? 'POST' : 'GET'),
       headers: { 'X-Requested-With': 'xastress', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
@@ -31,6 +32,8 @@ function client() {
     if (sc) cookie = sc.split(';')[0];
     return { status: res.status, data: await res.json() };
   };
+  fn.cookie = () => cookie;
+  return fn;
 }
 
 test('kiểm duyệt ngôn từ & tín hiệu khủng hoảng', () => {
@@ -213,7 +216,9 @@ test('khách mới: 0 xu, 1 phiếu; đang miễn phí thì gọi ly không tr�
     assert.strictEqual(r2.wallet.tray.nuocdua, 2);
   } finally { ai.isEnabled = orig; }
   await orderN(a, 'caphe', 8);
-  assert.strictEqual((await a('/order', { drink: 'caphe' })).status, 429, 'tối đa 10 ly miễn phí/ngày');
+  const over = await a('/order', { drink: 'caphe' });
+  assert.strictEqual(over.status, 200, 'quá 10 ly miễn phí/ngày vẫn được uống để vào quán');
+  assert.strictEqual(over.data.plan.bonus, 0, 'nhưng không kèm ly tặng');
   const w2 = (await a('/wallet')).data;
   assert.deepStrictEqual([w2.tray, w2.vouchers.self], [{ nuocdua: 2, caphe: 8 }, 1]);
 });
@@ -270,5 +275,94 @@ test('đã thu phí: ly của mình -> phiếu -> xu (mỗi ly gọi vẫn kèm 
   } finally {
     config.paywall.mode = 'auto';
     economy.resetCache();
+  }
+});
+
+test('luật "gọi 1 ly mới vào quán" + chat 3 kênh, tin riêng, chặn, động viên, tặng nước trực tiếp (socket)', async () => {
+  const config = require('../server/config');
+  const { io: ioc } = require('socket.io-client');
+  config.seatGate = true;
+  const a = client(), b = client();
+  await a('/auth/register', { username: 'sock_a', password: 'matkhau123', nickname: 'Khách A' });
+  await b('/auth/register', { username: 'sock_b', password: 'matkhau123', nickname: 'Khách B' });
+  const conn = (c) => new Promise((resolve) => {
+    const s = ioc(base, { extraHeaders: { Cookie: c.cookie() }, transports: ['websocket'] });
+    s.on('world:init', (w) => resolve({ s, me: w.you, init: w }));
+  });
+  const wait = (s, ev) => new Promise((r) => s.once(ev, r));
+  const emit = (s, ev, data) => new Promise((r) => s.emit(ev, data, r));
+  const A = await conn(a), B = await conn(b);
+  try {
+    assert.strictEqual(A.init.seated, false);
+    // Chưa gọi ly: không chat, không đăng bài
+    let r = await emit(A.s, 'chat', { channel: 'public', text: 'xin chào' });
+    assert.ok(r.needOrder);
+    r = await a('/posts', { tableId: 'congviec', content: 'Thử đăng bài khi chưa gọi ly' });
+    assert.strictEqual(r.status, 403);
+    assert.ok(r.data.needOrder);
+    // Gọi 1 ly -> được mở khoá (socket nhận 'seated')
+    const seatedEvt = wait(A.s, 'seated');
+    await a('/order', { drink: 'trada' });
+    await seatedEvt;
+    assert.strictEqual((await a('/wallet')).data.seated, true);
+    await b('/order', { drink: 'tragung' });
+
+    // Chat cả quán
+    let got = wait(B.s, 'chat');
+    assert.ok((await emit(A.s, 'chat', { channel: 'public', text: 'Chào cả quán!' })).ok);
+    assert.strictEqual((await got).text, 'Chào cả quán!');
+    // Chat theo bàn: chỉ người đang ở kênh bàn đó nhận
+    A.s.emit('chat:join', 'table:congviec');
+    const hist = await wait(B.s.emit('chat:join', 'table:congviec') && B.s, 'chat:history');
+    assert.strictEqual(hist.channel, 'table:congviec');
+    got = wait(B.s, 'chat');
+    await new Promise((res) => setTimeout(res, 50));
+    assert.ok((await emit(A.s, 'chat', { channel: 'table:congviec', text: 'Bàn công việc đây' })).ok);
+    const tm = await got;
+    assert.deepStrictEqual([tm.channel, tm.text], ['table:congviec', 'Bàn công việc đây']);
+
+    // Tin riêng
+    const bUid = B.init.players.find((p) => p.sid === B.me).uid;
+    got = wait(B.s, 'dm');
+    r = await emit(A.s, 'dm', { to: bUid, text: 'Chào B, dạo này ổn không?' });
+    assert.ok(r.ok);
+    assert.strictEqual((await got).text, 'Chào B, dạo này ổn không?');
+    const convos = (await b('/dms')).data;
+    assert.strictEqual(convos.unread, 1);
+    assert.strictEqual(convos.items[0].nickname, 'Khách A');
+    const thread = (await b(`/dms/${convos.items[0].uid}`)).data;
+    assert.strictEqual(thread.items[0].text, 'Chào B, dạo này ổn không?');
+    assert.strictEqual((await b('/dms')).data.unread, 0, 'đọc rồi thì hết chưa đọc');
+
+    // Động viên & an ủi
+    got = wait(B.s, 'cheer');
+    assert.ok((await emit(A.s, 'cheer', { sid: B.me, kind: 'dongvien' })).ok);
+    const ch = await got;
+    assert.deepStrictEqual([ch.kind, ch.to.nickname, ch.from.nickname], ['dongvien', 'Khách B', 'Khách A']);
+    r = await emit(A.s, 'cheer', { sid: B.me, kind: 'anui', text: 'Đáng đời' });
+    assert.ok(r.blocked, 'lời an ủi tiêu cực bị chặn');
+
+    // Tặng nước trực tiếp: A chỉ có 1 ly trà đá để tặng
+    r = await emit(A.s, 'gift', { sid: B.me, drink: 'trada', qty: 2 });
+    assert.ok(r.noCups);
+    got = wait(B.s, 'notify');
+    r = await emit(A.s, 'gift', { sid: B.me, drink: 'trada', qty: 1, message: 'Uống cho mát nha' });
+    assert.deepStrictEqual([r.ok, r.left], [true, 0]);
+    const n = await got;
+    assert.deepStrictEqual([n.kind, n.message, n.toGlass], ['gift:trada', 'Uống cho mát nha', 1]);
+    const gifts = (await b('/me/treats')).data;
+    assert.strictEqual(gifts.treats.counts.trada, 1);
+    assert.ok(gifts.notes.some((x) => x.direct && x.message === 'Uống cho mát nha'));
+
+    // Chặn: B chặn A -> A không nhắn riêng, không động viên được
+    const aUid = A.init.players.find((p) => p.sid === A.me).uid;
+    await b('/blocks', { uid: aUid });
+    assert.strictEqual((await emit(A.s, 'dm', { to: bUid, text: 'alo' })).ok, false);
+    assert.strictEqual((await emit(A.s, 'cheer', { sid: B.me, kind: 'anui' })).ok, false);
+    await b(`/blocks/${aUid}`, null, 'DELETE');
+    assert.ok((await emit(A.s, 'dm', { to: bUid, text: 'Hết bị chặn rồi' })).ok);
+  } finally {
+    A.s.close(); B.s.close();
+    config.seatGate = false;
   }
 });

@@ -36,6 +36,21 @@ Mỗi tâm sự mới là một ly trà đá đặt lên bàn.
 Chọn tâm trạng để Cô Tư gợi ý món. Gọi xong, Cô Tư đáp lời và nhân vật cầm ly nước trên tay cho cả quán thấy.
 Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của người dùng, không gửi lên máy chủ.
 
+**☕ Vào quán phải gọi 1 ly**
+- Mỗi lượt vào quán (online lại sau khi vắng hơn 30 phút – `VISIT_GAP_MINUTES`), khách được mời gọi 1 ly trước. Thực đơn tự mở ra, khung chat và các nút tương tác bị khoá cho tới khi gọi ly.
+- Chưa gọi ly thì chỉ xem: server chặn chat, đăng tâm sự, bình luận, bày tỏ cảm xúc, tặng nước. Người đã gọi ly có biểu tượng ☕ trước tên.
+
+**💬 Chat 3 kênh**
+- 🌐 **Cả quán**: mọi người cùng thấy, hiện bong bóng trên đầu nhân vật.
+- 🪑 **Theo bàn chủ đề**: chọn bàn Công Việc, Gia Đình, Tình Cảm… (ngồi vào bàn nào tự chuyển sang chat bàn đó); người mới vào kênh thấy 60 tin gần nhất.
+- ✉️ **Tin riêng**: danh sách cuộc trò chuyện, số tin chưa đọc, lưu 30 ngày rồi tự xoá. Có **chặn** người làm phiền.
+- Tất cả đều lọc từ thô tục, giới hạn tần suất, và hiện đường dây hỗ trợ khi có dấu hiệu khủng hoảng.
+
+**🫶 Bấm vào người trong quán**
+- Mở menu: ✉️ Nhắn riêng · 💪 Động viên · 🤗 An ủi · 🎁 Tặng nước · 👋 Vẫy chào · 🚫 Chặn.
+- Động viên / an ủi: chọn câu có sẵn hoặc tự viết (lời tiêu cực bị chặn); cả quán thấy nhân vật làm động tác và dòng thông báo trong chat.
+- Tặng nước trực tiếp: chọn món và số ly từ những ly mình đang có để tặng, kèm lời nhắn; người nhận được thông báo, lời đáp vui và ly vào khay của họ.
+
 **🤖 Cô Tư AI – gói tâm sự theo món nước (Claude API)**
 - Uống một ly = mở **gói tâm sự với Cô Tư AI**: 12 lượt, dùng trong 24 giờ. Mỗi món một "tính cách": trà đá để xả, trà gừng dịu lo âu, nước sấu gỡ rối, cà phê đen chia việc, sữa đậu nành thương mình, nước dừa nghỉ ngơi, trà chanh chém gió, nước mía tiếp năng lượng.
 - Trả lời từng chữ (streaming), có quy tắc an toàn và thẻ đường dây nóng khi có dấu hiệu khủng hoảng. Hội thoại tự xoá 7 ngày sau khi hết hạn, xoá được ngay.
@@ -93,6 +108,9 @@ server/
   economy.js      Luật ly: gọi 1 tặng kèm 1, ly của mình, ly để tặng, phiếu, xu, ngưỡng 200 khách
   telegram.js     Bot Telegram bán xu bằng Telegram Stars
   walletRoutes.js API ví, báo giá, liên kết Telegram
+  seat.js         Luật "gọi 1 ly mới vào quán" (lượt vào quán)
+  dmRoutes.js     Tin riêng & danh sách chặn
+  kindcheck.js    Kiểm tra lời nhắn tử tế (từ khoá + Claude)
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css
@@ -101,6 +119,7 @@ public/
   js/game3d.js    Engine 3D: camera, ánh sáng ngày/đêm, NPC, nhãn chữ
   js/avatar3d.js  Xem trước nhân vật 3D
   js/menu.js      Menu nước, ví xu, chat Cô Tư AI, mời nước kèm lời nhắn
+  js/social.js    Chat 3 kênh, menu tương tác khi bấm vào người khác, khoá khi chưa gọi ly
   js/world.js     Bản đồ logic: bàn, va chạm, tìm đường (dùng chung 2D/3D)
   js/game.js, js/sprites.js, js/vnart.js   Bản 2D pixel dự phòng
   js/main.js      Giao diện, API, realtime

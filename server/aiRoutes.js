@@ -51,10 +51,10 @@ function orderHandler(req, res) {
       }
       return { plan: pl, packId: pid };
     })();
-    res.json({ pack: packId ? shapePack(q.pack.get(packId, req.user.id)) : null, plan, wallet: economy.wallet(req.user.id) });
+    require('./realtime').seated(req.user.id); // đã gọi ly -> mở khoá tương tác trong quán
+    res.json({ pack: packId ? shapePack(q.pack.get(packId, req.user.id)) : null, plan, wallet: economy.wallet(req.user.id), seated: true });
   } catch (err) {
     if (err instanceof economy.NeedXu) return res.status(402).json({ error: `Ly này giá ${err.cost} xu, ví đang có ${err.have} xu.`, needXu: err.cost, xu: err.have });
-    if (err instanceof economy.TooManyFree) return res.status(429).json({ error: `Hôm nay bạn đã gọi ${economy.FREE_ORDERS_PER_DAY} ly miễn phí rồi, mai ghé tiếp nha ☕` });
     throw err;
   }
 }

@@ -66,6 +66,7 @@ app.post('/api/auth/delete', authLimiter, auth.requireUser, auth.deleteAccount);
 app.use('/api', posts);
 app.use('/api', require('./aiRoutes'));
 app.use('/api', require('./walletRoutes'));
+app.use('/api', require('./dmRoutes'));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy.' }));
 

@@ -93,7 +93,10 @@ export class Game {
   }
   updatePlayer(u) {
     const p = this.players.get(u.sid);
-    if (p) { p.nickname = u.nickname; p.avatar = u.avatar; }
+    if (!p) return;
+    if (u.nickname) p.nickname = u.nickname;
+    if (u.avatar) p.avatar = u.avatar;
+    if ('seated' in u) p.seated = u.seated;
   }
   removePlayer(sid) { this.players.delete(sid); this.bubbles.delete(sid); }
   clearPlayers() { this.players.clear(); this.me = null; }
@@ -137,7 +140,7 @@ export class Game {
       if (!this.me) return;
       const w = toWorld(ev);
       const target = this.hitTest(w.x, w.y);
-      if (target && (target.type === 'xeom' || target.type === 'vendor')) { this.interact(target); return; }
+      if (target && ['xeom', 'vendor', 'player'].includes(target.type)) { this.interact(target); return; }
       if (target) {
         const near = this.nearestApproach(target);
         if (Math.hypot(this.me.x - near.x, this.me.y - near.y) < 6) { this.interact(target); return; }
@@ -149,6 +152,9 @@ export class Game {
   }
 
   hitTest(x, y) {
+    for (const p of this.players.values()) {
+      if (p !== this.me && Math.abs(x - p.x) < 9 && y > p.y - 32 && y < p.y + 3) return { type: 'player', sid: p.sid };
+    }
     for (const t of Wd.TABLES) if (Math.abs(x - t.x) < 18 && y > t.y - 14 && y < t.y + 10) return { type: 'table', id: t.id };
     if (Math.abs(x - Wd.NPC_POS.x) < 44 && y > Wd.NPC_POS.y - 34 && y < Wd.CART.y + 2) return { type: 'npc' };
     if (Math.abs(x - Wd.XEOM.x) < 22 && y > Wd.XEOM.y - 36 && y < Wd.XEOM.y + 2) return { type: 'xeom' };
@@ -190,6 +196,8 @@ export class Game {
     } else if (target.type === 'npc') {
       this.me.dir = 'up';
       this.hooks.onNpc();
+    } else if (target.type === 'player') {
+      this.hooks.onPlayer(target.sid);
     } else if (target.type === 'xeom') {
       this.npcSay('xeom', XEOM_LINES[(Math.random() * XEOM_LINES.length) | 0]);
     } else if (target.type === 'vendor') {
@@ -600,7 +608,7 @@ export class Game {
     for (const p of this.players.values()) {
       const x = sx(p.x), y = sy(p.y - 36 - (p.sit ? 4 : 0));
       const mine = p === this.me;
-      pill(p.nickname, x, y, 600, 11, mine ? 'rgba(46,125,50,0.85)' : 'rgba(20,20,28,0.6)', '#fff', 4);
+      pill(`${p.seated ? '☕ ' : ''}${p.nickname}`, x, y, 600, 11, mine ? 'rgba(46,125,50,0.85)' : 'rgba(20,20,28,0.6)', '#fff', 4);
       const b = this.bubbles.get(p.sid);
       if (b && b.until > now) this.bubble(ctx, b.text, x, y - 14 * d, fs);
       else if (b) this.bubbles.delete(p.sid);
