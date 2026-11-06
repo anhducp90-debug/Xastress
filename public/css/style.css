@@ -286,3 +286,14 @@ textarea.pour { animation: pour 1.3s ease-in forwards; }
 .pay-note { margin: 0; font-size: 13.5px; color: var(--green); font-weight: 600; }
 .pay-note.warn { color: var(--red); }
 a.btn { text-decoration: none; }
+
+/* ===== Gọi 1 ly tặng kèm 1 ly, khay để tặng ===== */
+.order-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; background: #fff7e0; border: 2px solid #f0d9a0; border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; min-height: 48px; }
+.ob-status { font-weight: 700; color: var(--green); }
+.ob-tray { font-size: 14px; }
+.mi-tray { font-size: 11.5px; background: rgba(255,255,255,.15); border-radius: 99px; padding: 0 8px; color: #ffe39a; }
+.no-cups { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 10px; background: #fff7e0; border-radius: 10px; margin: 6px 0; }
+.qty-pick input[type=number] { display: inline-block; width: 80px; padding: 4px 8px; text-align: center; font-weight: 700; }
+.qty-pick .btn.small { padding: 2px 8px; }
+.drink-pick span { position: relative; }
+.drink-pick span i { position: absolute; right: -6px; bottom: -6px; font-style: normal; font-size: 11px; background: var(--red); color: #fff; border-radius: 99px; padding: 0 5px; line-height: 1.5; }

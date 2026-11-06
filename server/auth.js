@@ -104,8 +104,8 @@ function register(req, res) {
   const isAdmin = config.adminUsernames.includes(username.toLowerCase()) ? 1 : 0;
   const hash = bcrypt.hashSync(password, 11);
   const info = q.insertUser.run(username, hash, nick, JSON.stringify(sanitizeAvatar(avatar)), isAdmin, Date.now());
-  // Khách mới: ví 0 xu + 1 phiếu ly cho mình + 1 phiếu ly để tặng
-  db.prepare('UPDATE users SET xu = 0, voucher_self = ?, voucher_gift = ? WHERE id = ?').run(ECONOMY.welcomeSelf, ECONOMY.welcomeGift, info.lastInsertRowid);
+  // Khách mới: ví 0 xu + 1 phiếu gọi ly miễn phí (dùng khi quán đã thu phí; gọi ly luôn kèm 1 ly để tặng)
+  db.prepare('UPDATE users SET xu = 0, voucher_self = ?, voucher_gift = 0 WHERE id = ?').run(ECONOMY.welcomeSelf, info.lastInsertRowid);
   require('./economy').resetCache();
   createSession(res, info.lastInsertRowid);
   res.json({ user: publicUser(q.userById.get(info.lastInsertRowid)) });

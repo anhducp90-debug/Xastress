@@ -24,7 +24,7 @@ const DRINK_INFO = {
 const DRINKS = Object.keys(DRINK_INFO);
 const ECONOMY = {
   packTurns: 12, packHours: 24, // một ly = gói 12 lượt tâm sự với Cô Tư AI trong 24 giờ
-  welcomeSelf: 1, welcomeGift: 1, // khách mới: 1 ly miễn phí cho mình + 1 ly để tặng
+  welcomeSelf: 1, // khách mới: 1 phiếu gọi ly miễn phí (kèm 1 ly để tặng) khi quán đã thu phí
 };
 // Gói xu bán qua bot Telegram, thanh toán bằng Telegram Stars (XTR)
 const XU_PACKAGES = [

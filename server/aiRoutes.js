@@ -15,6 +15,7 @@ const q = {
   activeDrink: db.prepare('SELECT * FROM ai_packs WHERE user_id = ? AND drink = ? AND expires_at > ? AND turns_left > 0 ORDER BY id DESC LIMIT 1'),
   pack: db.prepare('SELECT * FROM ai_packs WHERE id = ? AND user_id = ?'),
   insertPack: db.prepare('INSERT INTO ai_packs (user_id, drink, turns_left, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'),
+  extendPack: db.prepare('UPDATE ai_packs SET turns_left = turns_left + ?, expires_at = ? WHERE id = ?'),
   useTurn: db.prepare('UPDATE ai_packs SET turns_left = turns_left - 1 WHERE id = ? AND turns_left > 0'),
   refundTurn: db.prepare('UPDATE ai_packs SET turns_left = turns_left + 1 WHERE id = ?'),
   delPack: db.prepare('DELETE FROM ai_packs WHERE id = ? AND user_id = ?'),
@@ -33,27 +34,32 @@ router.get('/ai/packs', requireUser, (req, res) => {
   res.json({ packs: q.activePacks.all(req.user.id, Date.now()).map(shapePack) });
 });
 
-// Gọi món = mở gói Cô Tư AI. Trả bằng: ly trong khay -> miễn phí (chưa thu phí) -> phiếu -> xu.
-// Đang có gói cùng món còn hạn thì dùng tiếp, không tính thêm.
-router.post('/ai/packs', requireUser, (req, res) => {
+// GỌI 1 LY: uống 1 ly (mở gói Cô Tư AI nếu AI bật) + được tặng kèm 1 ly vào khay để mời người khác.
+// Đang uống dở gói cùng món thì "gọi thêm ly": cộng thêm lượt + gia hạn, vẫn được tặng kèm 1 ly.
+function orderHandler(req, res) {
   const { drink } = req.body || {};
   if (!DRINK_INFO[drink]) return res.status(400).json({ error: 'Quán không có món này.' });
-  if (!ai.isEnabled()) return res.status(503).json({ error: 'Cô Tư AI đang nghỉ, bạn dùng các bài tập nhanh trong menu nhé.', aiDisabled: true });
   const now = Date.now();
-  const existing = q.activeDrink.get(req.user.id, drink, now);
-  if (existing) return res.json({ pack: shapePack(existing), paid: null, wallet: economy.wallet(req.user.id) });
   try {
-    const { id, plan } = db.transaction(() => {
-      const pl = economy.pay(req.user.id, drink, 1, 'self');
-      const pid = q.insertPack.run(req.user.id, drink, ECONOMY.packTurns, now + ECONOMY.packHours * 3600e3, now).lastInsertRowid;
-      return { id: pid, plan: pl };
+    const { plan, packId } = db.transaction(() => {
+      const pl = economy.order(req.user.id, drink);
+      let pid = null;
+      if (ai.isEnabled()) {
+        const existing = q.activeDrink.get(req.user.id, drink, now);
+        if (existing) { q.extendPack.run(ECONOMY.packTurns, now + ECONOMY.packHours * 3600e3, existing.id); pid = existing.id; }
+        else pid = q.insertPack.run(req.user.id, drink, ECONOMY.packTurns, now + ECONOMY.packHours * 3600e3, now).lastInsertRowid;
+      }
+      return { plan: pl, packId: pid };
     })();
-    res.json({ pack: shapePack(q.pack.get(id, req.user.id)), paid: economy.describe(plan), wallet: economy.wallet(req.user.id) });
+    res.json({ pack: packId ? shapePack(q.pack.get(packId, req.user.id)) : null, plan, wallet: economy.wallet(req.user.id) });
   } catch (err) {
     if (err instanceof economy.NeedXu) return res.status(402).json({ error: `Ly này giá ${err.cost} xu, ví đang có ${err.have} xu.`, needXu: err.cost, xu: err.have });
+    if (err instanceof economy.TooManyFree) return res.status(429).json({ error: `Hôm nay bạn đã gọi ${economy.FREE_ORDERS_PER_DAY} ly miễn phí rồi, mai ghé tiếp nha ☕` });
     throw err;
   }
-});
+}
+router.post('/order', requireUser, orderHandler);
+router.post('/ai/packs', requireUser, orderHandler); // tương thích bản cũ
 
 router.get('/ai/packs/:id', requireUser, (req, res) => {
   const p = q.pack.get(int(req.params.id), req.user.id);

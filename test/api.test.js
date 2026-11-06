@@ -104,111 +104,142 @@ test('xoá tài khoản xoá sạch dữ liệu', async () => {
   assert.strictEqual(g.status, 404);
 });
 
-test('mời nước: 101 ly trà đá, lời đáp hài hước, bộ đếm theo món, thông báo kèm lời nhắn, tặng xu', async () => {
-  const a = client();
-  await a('/auth/register', { username: 'moi_a', password: 'matkhau123' });
-  const { data } = await a('/posts', { tableId: 'congviec', content: 'Hôm nay bị mắng oan, buồn ghê', anonymous: true });
-  const id = data.post.id;
-  const xu0 = (await a('/wallet')).data.xu;
+// Gọi n ly một món (mỗi ly gọi được tặng kèm 1 ly vào khay)
+async function orderN(c, drink, n) { for (let k = 0; k < n; k++) assert.strictEqual((await c('/order', { drink })).status, 200); }
 
+test('luật ly: gọi 1 ly được tặng kèm 1 ly; chỉ tặng được ly trong khay; nhận 100 còn 99, tặng 10 còn 89', async () => {
+  const a = client(), b = client(), x = client();
+  await a('/auth/register', { username: 'luat_a', password: 'matkhau123', nickname: 'Người A' });
+  await b('/auth/register', { username: 'luat_b', password: 'matkhau123' });
+  await x('/auth/register', { username: 'luat_x', password: 'matkhau123' });
+  const pa = (await a('/posts', { tableId: 'congviec', content: 'Áp lực công việc quá trời luôn' })).data.post.id;
+  const px = (await x('/posts', { tableId: 'cuocsong', content: 'Cuộc sống dạo này bế tắc quá' })).data.post.id;
+
+  // B gọi 1 ly trà đá: miễn phí, kèm 1 ly để tặng
+  const o = await b('/order', { drink: 'trada' });
+  assert.strictEqual(o.data.plan.text, 'miễn phí');
+  assert.strictEqual(o.data.plan.bonus, 1);
+  assert.deepStrictEqual(o.data.wallet.tray, { trada: 1 });
+  // chỉ tặng được 1 ly dư
+  assert.strictEqual((await b(`/posts/${pa}/treat`, { drink: 'trada', qty: 3 })).status, 409);
+  assert.strictEqual((await b(`/posts/${pa}/treat`, { drink: 'trada', qty: 1 })).data.left, 0);
+  const none = await b(`/posts/${pa}/treat`, { drink: 'trada', qty: 1 });
+  assert.strictEqual(none.status, 409);
+  assert.ok(none.data.noCups);
+  assert.strictEqual((await b(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 })).status, 409, 'không có cà phê trong khay thì không tặng được');
+
+  // A đã nhận 1 ly (thành "ly của mình"); 11 người khác gọi đủ ly rồi tặng A thêm 99 ly -> tổng 100
   const givers = [];
-  for (let i = 0; i < 6; i++) {
-    const g = client();
-    await g('/auth/register', { username: `moi_g${i}`, password: 'matkhau123', nickname: `Khách Mời ${i}` });
-    givers.push(g);
+  for (let i = 0; i < 10; i++) { const g = client(); await g('/auth/register', { username: `luat_g${i}`, password: 'matkhau123' }); givers.push(g); }
+  for (let i = 0; i < 10; i++) {
+    const n = i < 9 ? 10 : 9;
+    await orderN(givers[i], 'trada', n);
+    assert.strictEqual((await givers[i](`/posts/${pa}/treat`, { drink: 'trada', qty: n })).status, 200);
   }
-  assert.strictEqual((await givers[0](`/posts/${id}/treat`, { drink: 'bia' })).status, 400);
-  assert.strictEqual((await a(`/posts/${id}/treat`, { drink: 'trada' })).status, 400, 'không tự mời');
-  let last;
-  for (let i = 0; i < 5; i++) {
-    for (let k = 0; k < 2; k++) {
-      last = await givers[i](`/posts/${id}/treat`, { drink: 'trada', qty: 10, message: k ? '' : 'Cố lên bạn ơi, mình hiểu mà' });
-      assert.strictEqual(last.status, 200);
-    }
-  }
-  assert.strictEqual((await givers[0](`/posts/${id}/treat`, { drink: 'trada', qty: 1 })).status, 429, 'tối đa 20 ly/người/ngày cho một tâm sự');
-  last = await givers[5](`/posts/${id}/treat`, { drink: 'trada', qty: 1, message: 'Bạn không vô dụng đâu, nghỉ chút nhé' });
-  assert.strictEqual(last.status, 200, 'lời tử tế có chữ phủ định vẫn được gửi');
-  assert.strictEqual(last.data.count, 101);
-  assert.match(last.data.reply, /101 ly trà đá/);
-  assert.match(last.data.reply, /uống hết/);
-  await givers[5](`/posts/${id}/treat`, { drink: 'tragung', qty: 3 });
-
-  const post = (await a(`/posts/${id}`)).data.post;
-  assert.deepStrictEqual(post.treats.counts, { trada: 101, tragung: 3 });
-  assert.strictEqual(post.treats.total, 104);
-  assert.ok(post.treatNotes.some((t) => t.message === 'Bạn không vô dụng đâu, nghỉ chút nhé'));
-
-  const notifs = (await a('/notifications')).data.items;
-  assert.ok(notifs.some((n) => n.kind === 'treat:trada' && n.qty === 10 && n.message === 'Cố lên bạn ơi, mình hiểu mà'));
-  const mine = (await a('/me/treats')).data;
-  assert.strictEqual(mine.treats.counts.trada, 101);
-  const w = (await a('/wallet')).data;
-  assert.deepStrictEqual(w.tray, { trada: 101, tragung: 3 }, 'ly được tặng vào khay');
-  assert.strictEqual(w.xu, xu0);
+  let w = (await a('/wallet')).data;
+  assert.deepStrictEqual(w.glasses, ['trada'], '1 ly là ly của mình để uống');
+  assert.deepStrictEqual(w.tray, { trada: 99 }, 'nhận 100 ly -> 99 ly để tặng');
+  assert.strictEqual((await a(`/posts/${pa}`)).data.post.treats.counts.trada, 100);
+  // A tặng đi 10 ly -> còn 89
+  const t = await a(`/posts/${px}/treat`, { drink: 'trada', qty: 10, message: 'Chia bớt trà đá cho bạn nè' });
+  assert.strictEqual(t.status, 200);
+  assert.strictEqual(t.data.left, 89);
+  assert.deepStrictEqual((await a('/wallet')).data.tray, { trada: 89 });
+  // người nhận X: 1 ly của mình + 9 ly để tặng
+  w = (await x('/wallet')).data;
+  assert.deepStrictEqual([w.glasses, w.tray], [['trada'], { trada: 9 }]);
+  const n = (await x('/notifications')).data.items.find((it) => it.kind === 'treat:trada');
+  assert.strictEqual(n.qty, 10);
+  assert.strictEqual(n.message, 'Chia bớt trà đá cho bạn nè');
 });
 
-test('chặn lời nhắn tiêu cực kèm ly nước', async () => {
+test('mời nước: 101 ly trà đá -> lời đáp hài hước, bộ đếm theo món', async () => {
+  const a = client();
+  await a('/auth/register', { username: 'moi_a', password: 'matkhau123' });
+  const id = (await a('/posts', { tableId: 'congviec', content: 'Hôm nay bị mắng oan, buồn ghê', anonymous: true })).data.post.id;
+  let last;
+  for (let i = 0; i < 11; i++) {
+    const g = client();
+    await g('/auth/register', { username: `moi_g${i}`, password: 'matkhau123' });
+    const n = i < 10 ? 10 : 1;
+    await orderN(g, 'trada', n);
+    last = await g(`/posts/${id}/treat`, { drink: 'trada', qty: n, message: i === 10 ? 'Bạn không vô dụng đâu, nghỉ chút nhé' : '' });
+    assert.strictEqual(last.status, 200);
+  }
+  assert.strictEqual(last.data.count, 101);
+  assert.match(last.data.reply, /101 ly trà đá.*uống hết/);
+  const post = (await a(`/posts/${id}`)).data.post;
+  assert.deepStrictEqual(post.treats.counts, { trada: 101 });
+  assert.ok(post.treatNotes.some((t) => t.message === 'Bạn không vô dụng đâu, nghỉ chút nhé'));
+  assert.deepStrictEqual((await a('/wallet')).data.tray, { trada: 100 });
+});
+
+test('chặn lời nhắn tiêu cực kèm ly nước (không mất ly)', async () => {
   const a = client(), b = client();
   await a('/auth/register', { username: 'neg_a', password: 'matkhau123' });
   await b('/auth/register', { username: 'neg_b', password: 'matkhau123' });
   const { data } = await a('/posts', { tableId: 'giadinh', content: 'Cãi nhau với bố mẹ, mệt mỏi quá' });
+  await orderN(b, 'trachanh', 1);
   for (const m of ['Đáng đời, ai bảo không nghe lời', 'Có thế thôi mà cũng than', 'đm cố lên', 'Mày yếu đuối quá']) {
     const r = await b(`/posts/${data.post.id}/treat`, { drink: 'trachanh', message: m });
     assert.strictEqual(r.status, 422, m);
     assert.ok(r.data.blocked && r.data.suggestions.length);
   }
+  assert.deepStrictEqual((await b('/wallet')).data.tray, { trachanh: 1 }, 'lời nhắn bị chặn thì ly vẫn còn');
   const ok = await b(`/posts/${data.post.id}/treat`, { drink: 'trachanh', message: 'Đừng nghĩ mình thất bại nhé, thương bạn' });
   assert.strictEqual(ok.status, 200);
-  assert.strictEqual((await a('/notifications')).data.items.filter((n) => n.kind.startsWith('treat')).length, 1, 'lời nhắn bị chặn không tạo thông báo');
+  assert.strictEqual((await a('/notifications')).data.items.filter((n) => n.kind.startsWith('treat')).length, 1);
 });
 
-test('khách mới: 0 xu, 1 phiếu ly cho mình + 1 phiếu ly để tặng; đang miễn phí thì không trừ phiếu', async () => {
+test('khách mới: 0 xu, 1 phiếu; đang miễn phí thì gọi ly không trừ phiếu; giới hạn ly miễn phí mỗi ngày', async () => {
   const a = client();
   await a('/auth/register', { username: 'vi_a', password: 'matkhau123' });
   const w = (await a('/wallet')).data;
   assert.strictEqual(w.xu, 0);
-  assert.deepStrictEqual(w.vouchers, { self: 1, gift: 1 });
-  assert.strictEqual(w.economy.paywall, false, 'chưa đủ 200 người -> miễn phí');
+  assert.deepStrictEqual(w.vouchers, { self: 1 });
+  assert.deepStrictEqual(w.tray, {});
+  assert.strictEqual(w.economy.paywall, false);
   assert.strictEqual(w.economy.threshold, 200);
-  const qt = (await a('/wallet/quote?drink=caphe&purpose=self&qty=1')).data;
-  assert.strictEqual(qt.text, 'miễn phí');
-  assert.strictEqual((await a('/ai/packs', { drink: 'tragung' })).status, 503, 'AI tắt trong test');
+  assert.strictEqual((await a('/wallet/quote?drink=caphe')).data.text, 'miễn phí');
+  // AI bật: gọi thêm ly cùng món khi đang uống dở -> cộng lượt, vẫn tặng kèm 1 ly
+  const ai = require('../server/ai');
+  const orig = ai.isEnabled;
+  ai.isEnabled = () => true;
+  try {
+    const r1 = (await a('/order', { drink: 'nuocdua' })).data;
+    const r2 = (await a('/order', { drink: 'nuocdua' })).data;
+    assert.strictEqual(r2.pack.id, r1.pack.id);
+    assert.strictEqual(r2.pack.turnsLeft, 24);
+    assert.strictEqual(r2.wallet.tray.nuocdua, 2);
+  } finally { ai.isEnabled = orig; }
+  await orderN(a, 'caphe', 8);
+  assert.strictEqual((await a('/order', { drink: 'caphe' })).status, 429, 'tối đa 10 ly miễn phí/ngày');
+  const w2 = (await a('/wallet')).data;
+  assert.deepStrictEqual([w2.tray, w2.vouchers.self], [{ nuocdua: 2, caphe: 8 }, 1]);
 });
 
-test('tặng lại ly mình được tặng; khi bắt đầu thu phí: phiếu -> xu; mua xu qua bot Telegram Stars', async () => {
+test('đã thu phí: ly của mình -> phiếu -> xu (mỗi ly gọi vẫn kèm 1 ly tặng); mua xu qua bot Telegram Stars', async () => {
   const config = require('../server/config');
   const economy = require('../server/economy');
   const telegram = require('../server/telegram');
-  const a = client(), b = client(), c = client();
+  const a = client(), c = client();
   await a('/auth/register', { username: 'pay_a', password: 'matkhau123', nickname: 'Người A' });
-  await b('/auth/register', { username: 'pay_b', password: 'matkhau123', nickname: 'Người B' });
   await c('/auth/register', { username: 'pay_c', password: 'matkhau123', nickname: 'Người C' });
-  const pa = (await a('/posts', { tableId: 'congviec', content: 'A kể chuyện công việc mệt mỏi' })).data.post.id;
-  const pb = (await b('/posts', { tableId: 'tinhcam', content: 'B kể chuyện tình cảm buồn quá' })).data.post.id;
   const pc = (await c('/posts', { tableId: 'giadinh', content: 'C kể chuyện gia đình rối ren' })).data.post.id;
+  await orderN(a, 'tragung', 1);
+  await a(`/posts/${pc}/treat`, { drink: 'tragung', qty: 1 }); // C có "ly của mình" trà gừng
 
-  // Giai đoạn miễn phí: A mời B 3 ly trà gừng -> vào khay B
-  let r = await a(`/posts/${pb}/treat`, { drink: 'tragung', qty: 3 });
-  assert.strictEqual(r.data.paid, '3 ly miễn phí');
-  assert.deepStrictEqual((await b('/wallet')).data.tray, { tragung: 3 });
-  // B tặng lại 1 ly trà gừng cho C -> lấy từ khay
-  r = await b(`/posts/${pc}/treat`, { drink: 'tragung', qty: 1 });
-  assert.strictEqual(r.data.paid, '1 ly trong khay');
-  assert.deepStrictEqual((await b('/wallet')).data.tray, { tragung: 2 });
-  assert.deepStrictEqual((await c('/wallet')).data.tray, { tragung: 1 });
-
-  // Bắt đầu thu phí
   config.paywall.mode = 'on';
   try {
-    assert.strictEqual((await c('/wallet')).data.economy.paywall, true);
-    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
-    assert.strictEqual(r.data.paid, 'phiếu chào mừng', 'phiếu tặng dùng cho ly đầu tiên');
-    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
-    assert.strictEqual(r.status, 402, 'hết phiếu, 0 xu -> phải mua xu');
+    let q2 = (await c('/wallet/quote?drink=tragung')).data;
+    assert.deepStrictEqual([q2.method, q2.bonus], ['glass', 0], 'uống ly của mình, không kèm ly tặng');
+    let r = await c('/order', { drink: 'tragung' });
+    assert.strictEqual(r.data.plan.text, 'ly của bạn');
+    r = await c('/order', { drink: 'caphe' });
+    assert.deepStrictEqual([r.data.plan.text, r.data.wallet.tray.caphe], ['phiếu chào mừng', 1]);
+    r = await c('/order', { drink: 'caphe' });
+    assert.strictEqual(r.status, 402);
     assert.strictEqual(r.data.needXu, 15);
-    r = await c(`/posts/${pa}/treat`, { drink: 'tragung', qty: 1 });
-    assert.strictEqual(r.data.paid, '1 ly trong khay', 'tặng lại ly được tặng thì không tốn xu');
 
     // Mua xu qua bot Telegram (giả lập Bot API)
     const sent = [];
@@ -222,22 +253,20 @@ test('tặng lại ly mình được tặng; khi bắt đầu thu phí: phiếu 
     assert.strictEqual((await c('/wallet')).data.telegram.linked, true);
     await telegram.handleUpdate({ update_id: 2, callback_query: { id: 'cb1', from, data: 'buy:vua', message: { chat } } });
     const inv = sent.find((x) => x.method === 'sendInvoice');
-    assert.strictEqual(inv.body.currency, 'XTR');
-    assert.strictEqual(inv.body.prices[0].amount, 40);
-    const payload = inv.body.invoice_payload || inv.body.payload;
+    assert.deepStrictEqual([inv.body.currency, inv.body.prices[0].amount], ['XTR', 40]);
+    const payload = inv.body.payload;
     await telegram.handleUpdate({ update_id: 3, pre_checkout_query: { id: 'pq1', from, currency: 'XTR', total_amount: 40, invoice_payload: payload } });
     assert.deepStrictEqual(sent.find((x) => x.method === 'answerPreCheckoutQuery').body, { pre_checkout_query_id: 'pq1', ok: true });
-    // người lạ không được trả tiền cho ví này
     await telegram.handleUpdate({ update_id: 4, pre_checkout_query: { id: 'pq2', from: { id: 999 }, currency: 'XTR', total_amount: 40, invoice_payload: payload } });
-    assert.strictEqual(sent.filter((x) => x.method === 'answerPreCheckoutQuery').pop().body.ok, false);
+    assert.strictEqual(sent.filter((x) => x.method === 'answerPreCheckoutQuery').pop().body.ok, false, 'người lạ không trả vào ví này được');
     const paid = { chat, from, successful_payment: { currency: 'XTR', total_amount: 40, invoice_payload: payload, telegram_payment_charge_id: 'ch_123' } };
     await telegram.handleUpdate({ update_id: 5, message: paid });
     await telegram.handleUpdate({ update_id: 6, message: paid }); // Telegram gửi trùng
     assert.strictEqual((await c('/wallet')).data.xu, 60, 'cộng đúng một lần');
 
-    r = await c(`/posts/${pa}/treat`, { drink: 'caphe', qty: 1 });
-    assert.strictEqual(r.data.paid, '15 xu');
-    assert.strictEqual((await c('/wallet')).data.xu, 45);
+    r = await c('/order', { drink: 'caphe' });
+    assert.strictEqual(r.data.plan.text, '15 xu');
+    assert.deepStrictEqual([r.data.wallet.xu, r.data.wallet.tray.caphe], [45, 2], 'trả xu vẫn được kèm 1 ly để tặng');
   } finally {
     config.paywall.mode = 'auto';
     economy.resetCache();

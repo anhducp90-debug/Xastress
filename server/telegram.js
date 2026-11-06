@@ -84,7 +84,7 @@ async function handleMessage(m) {
     return reply(chatId, '☕ Chào bạn! Đây là bot bán xu của quán Trà Đá Xả Stress.\n\nĐể mua xu: vào xastress.info.vn → 🧋 Gọi nước → "Mua xu qua Telegram". Bot sẽ tự liên kết với tài khoản của bạn.\n\n/mua – mua xu\n/vi – xem ví\n/huy – bỏ liên kết\n/paysupport – hỗ trợ thanh toán');
   }
   if (cmd === '/paysupport') return reply(chatId, `🧾 Hỗ trợ thanh toán: ${tg.support}`);
-  if (cmd === '/terms') return reply(chatId, 'Xu dùng để gọi nước (gói tâm sự Cô Tư AI) và tặng nước trong quán xastress.info.vn. Xu không quy đổi ra tiền. Lỗi giao dịch được hoàn Stars theo yêu cầu qua /paysupport.');
+  if (cmd === '/terms') return reply(chatId, 'Xu dùng để gọi nước trong quán xastress.info.vn: mỗi ly là một gói tâm sự Cô Tư AI và được tặng kèm 1 ly để mời người khác. Xu không quy đổi ra tiền. Lỗi giao dịch được hoàn Stars theo yêu cầu qua /paysupport.');
   if (!link) return reply(chatId, '🔗 Bạn chưa liên kết tài khoản quán. Vào xastress.info.vn → 🧋 Gọi nước → "Mua xu qua Telegram" nhé.');
   if (cmd === '/huy') { q.unlinkTg.run(from.id, link.user_id); return reply(chatId, '👋 Đã bỏ liên kết. Hẹn gặp lại ở quán!'); }
   if (cmd === '/vi') return reply(chatId, `👛 Ví của ${link.nickname}: ${link.xu} xu`);

@@ -41,19 +41,19 @@ Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của ngư
 - Trả lời từng chữ (streaming), có quy tắc an toàn và thẻ đường dây nóng khi có dấu hiệu khủng hoảng. Hội thoại tự xoá 7 ngày sau khi hết hạn, xoá được ngay.
 - Không có `ANTHROPIC_API_KEY` thì quán vẫn chạy, chỉ tắt phần AI (vẫn còn bài tập nhanh).
 
-**🧺 Khay nước, phiếu chào mừng, xu & thu phí**
-- **Khách mới**: 1 phiếu *ly cho mình* + 1 phiếu *ly để tặng*.
-- **Khay nước**: ly người khác tặng nằm trong khay – **uống** (mở gói Cô Tư AI) hoặc **tặng lại** cho người khác.
-- Mỗi lần uống/tặng, quán trả theo thứ tự: **ly cùng món trong khay → miễn phí (khi chưa thu phí) → phiếu chào mừng → xu**. Trước khi bấm, giao diện báo rõ sẽ trả bằng gì.
-- **Hiện tại hoàn toàn miễn phí.** Khi quán đủ **200 khách** (`PAYWALL_USERS`), tự động bắt đầu tính phí; thanh thực đơn hiển thị tiến độ "x/200 khách". `PAYWALL_MODE=on|off` để bật/tắt thủ công.
+**🧺 Luật ly nước, xu & thu phí**
+- **Gọi 1 ly** = uống 1 ly (mở gói Cô Tư AI 12 lượt) **+ được tặng kèm 1 ly** cùng món để mời người khác. Đang uống dở mà gọi thêm thì cộng thêm 12 lượt và vẫn kèm 1 ly tặng.
+- **Chỉ tặng được ly đang có để tặng.** Gọi 1 ly trà đá thì có đúng 1 ly trà đá để tặng.
+- **Được tặng ly:** nếu chưa có "ly của mình" món đó thì 1 ly thành ly của mình (để uống), còn lại để tặng tiếp. Ví dụ được tặng **100 ly trà đá → 1 ly của mình + 99 ly để tặng**; tặng đi 10 ly → **còn 89**.
+- **Hiện tại hoàn toàn miễn phí** (tối đa 10 lần gọi ly miễn phí/người/ngày để tránh gom ly). Khi quán đủ **200 khách** (`PAYWALL_USERS`) thì bắt đầu tính phí: gọi ly sẽ dùng *ly của mình* nếu có (không kèm ly tặng) → phiếu chào mừng (khách mới có 1 phiếu) → trả xu; mỗi ly trả bằng phiếu/xu vẫn kèm 1 ly để tặng. `PAYWALL_MODE=on|off` để bật/tắt thủ công.
 - **Mua xu qua bot Telegram**, thanh toán bằng **Telegram Stars ⭐** (Telegram bắt buộc dùng Stars cho hàng hoá số trong bot). Web tạo mã liên kết dùng một lần → mở bot → chọn gói → thanh toán → xu tự vào ví và web báo ngay. Mỗi giao dịch chỉ cộng xu một lần. Bot chỉ bán khi đã bắt đầu thu phí. Lệnh: `/mua`, `/vi`, `/huy`, `/paysupport`, `/terms`.
 - Giá món (xu) và gói xu (số ⭐) chỉnh trong `server/constants.js` (`DRINK_INFO`, `XU_PACKAGES`).
 
 **🎁 Mời nước kèm lời nhắn – có lời đáp hài hước**
-- Ở mỗi tâm sự, mọi người có thể mời 1 ly, 3 ly hoặc cả két 10 ly kèm lời nhắn. Mỗi người mời tối đa 20 ly cho một tâm sự mỗi ngày.
+- Ở mỗi tâm sự, mọi người tặng số ly mình đang có để tặng (1, 3, 10 hoặc tất cả) kèm lời nhắn.
 - **Bộ đếm theo từng món** (🧊 101 · 🫚 3 …) trên thẻ tâm sự, trong trang tâm sự và ở "Quầy quà" của người nhận.
 - **Lời đáp vui** theo số ly đã nhận, ví dụ: *"101 ly trà đá?! Làm sao con uống hết được trời ơi 😅😅😅"*.
-- Người nhận được thông báo ngay (kèm lời nhắn, số ly, lời đáp vui); ly được mời vào khay của họ.
+- Người nhận được thông báo ngay (kèm lời nhắn, số ly, lời đáp vui, bao nhiêu ly để tặng tiếp).
 - **Chặn lời nhắn tiêu cực** 2 lớp: bộ lọc từ khoá tiếng Việt (biết phân biệt "bạn *không* vô dụng đâu") + Claude phân loại tử tế/tiêu cực khi có khoá API. Lời nhắn bị chặn không được gửi, kèm lý do và câu gợi ý.
 
 **Tâm sự & cổ vũ**
@@ -90,7 +90,7 @@ server/
   ai.js           Cô Tư AI (Claude API): nhân cách theo món, stream, phân loại lời nhắn
   aiRoutes.js     Ví xu, gói AI, chat SSE
   funny.js        Lời đáp hài hước theo số ly nhận được
-  economy.js      Khay nước, phiếu, xu, ngưỡng thu phí 200 khách
+  economy.js      Luật ly: gọi 1 tặng kèm 1, ly của mình, ly để tặng, phiếu, xu, ngưỡng 200 khách
   telegram.js     Bot Telegram bán xu bằng Telegram Stars
   walletRoutes.js API ví, báo giá, liên kết Telegram
   db.js           Lược đồ SQLite

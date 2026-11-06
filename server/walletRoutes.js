@@ -19,13 +19,11 @@ router.get('/wallet', requireUser, (req, res) => {
   });
 });
 
-// Xem trước sẽ trả bằng gì trước khi uống/tặng
+// Xem trước: gọi 1 ly món này sẽ trả bằng gì, khay đang có bao nhiêu ly để tặng
 router.get('/wallet/quote', requireUser, (req, res) => {
-  const { drink, purpose } = req.query;
-  const qty = [1, 3, 10].includes(Number(req.query.qty)) ? Number(req.query.qty) : 1;
-  if (!DRINKS.includes(drink) || !['self', 'gift'].includes(purpose)) return res.status(400).json({ error: 'Yêu cầu không hợp lệ.' });
-  const plan = economy.quote(req.user.id, drink, qty, purpose);
-  res.json({ ...plan, text: economy.describe(plan) });
+  const { drink } = req.query;
+  if (!DRINKS.includes(drink)) return res.status(400).json({ error: 'Yêu cầu không hợp lệ.' });
+  res.json(economy.quoteOrder(req.user.id, drink));
 });
 
 // Tạo đường dẫn mở bot Telegram (mã dùng một lần, hết hạn sau 15 phút)

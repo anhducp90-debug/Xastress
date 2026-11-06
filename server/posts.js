@@ -53,7 +53,6 @@ const q = {
   treatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE post_id = ? GROUP BY drink'),
   treatNotes: db.prepare(`SELECT t.drink, t.qty, t.message, t.created_at, u.nickname FROM treats t JOIN users u ON u.id = t.from_user
     WHERE t.post_id = ? AND t.message != '' ORDER BY t.id DESC LIMIT 40`),
-  treatGivenToday: db.prepare('SELECT COALESCE(SUM(qty), 0) n FROM treats WHERE from_user = ? AND post_id = ? AND created_at > ?'),
   insertTreat: db.prepare('INSERT INTO treats (post_id, from_user, to_user, drink, qty, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   notifyTreat: db.prepare('INSERT INTO notifications (user_id, kind, post_id, actor, message, qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   myTreatCounts: db.prepare('SELECT drink, SUM(qty) n FROM treats WHERE to_user = ? GROUP BY drink'),
@@ -224,14 +223,17 @@ async function checkKind(message) {
 router.post('/posts/:id/treat', requireUser, async (req, res) => {
   const p = q.post.get(int(req.params.id));
   const { drink } = req.body || {};
-  const qty = [1, 3, 10].includes(Number(req.body && req.body.qty)) ? Number(req.body.qty) : 1;
+  const qty = Math.max(1, Math.min(100, parseInt(req.body && req.body.qty, 10) || 1));
   const message = clean(req.body && req.body.message, 200).replace(/\s+/g, ' ');
   if (!p || p.hidden) return res.status(404).json({ error: 'Không tìm thấy tâm sự này.' });
   if (!DRINKS.includes(drink)) return res.status(400).json({ error: 'Quán không có món này.' });
   if (p.user_id === req.user.id) return res.status(400).json({ error: 'Tự mời mình thì gọi thẳng ở quầy nhé 😄' });
-  const dayAgo = Date.now() - 86400e3;
-  if (q.treatGivenToday.get(req.user.id, p.id, dayAgo).n + qty > 20) {
-    return res.status(429).json({ error: 'Hôm nay bạn đã mời người này nhiều lắm rồi, để họ uống từ từ đã 😅' });
+  const have = economy.giftable(req.user.id, drink);
+  if (have < qty) {
+    return res.status(409).json({
+      error: have ? `Khay của bạn chỉ còn ${have} ly để tặng.` : 'Bạn chưa có ly này để tặng. Gọi 1 ly là được tặng kèm 1 ly để mời người khác nhé!',
+      noCups: true, have,
+    });
   }
   if (!hit(`treat:${req.user.id}`, 40, 86400e3)) return res.status(429).json({ error: 'Bạn hào phóng quá! Mai mời tiếp nhé.' });
   if (message) {
@@ -244,29 +246,27 @@ router.post('/posts/:id/treat', requireUser, async (req, res) => {
     }
   }
   const now = Date.now();
-  // Trả cho số ly mời (khay -> miễn phí -> phiếu tặng -> xu); ly vào khay người nhận để uống hoặc tặng lại
-  let plan;
+  // Lấy ly từ khay người tặng -> người nhận (1 ly thành "ly của mình" nếu chưa có, còn lại vào khay)
+  let got;
   try {
-    plan = db.transaction(() => {
-      const pl = economy.pay(req.user.id, drink, qty, 'gift');
+    got = db.transaction(() => {
+      const r = economy.give(req.user.id, p.user_id, drink, qty);
       q.insertTreat.run(p.id, req.user.id, p.user_id, drink, qty, message, now);
       q.notifyTreat.run(p.user_id, `treat:${drink}`, p.id, req.user.nickname, message, qty, now);
-      economy.addCups(p.user_id, drink, qty);
-      return pl;
+      return r;
     })();
   } catch (err) {
-    if (err instanceof economy.NeedXu) {
-      return res.status(402).json({ error: `Mời ${qty} ly cần ${err.cost} xu, ví đang có ${err.have} xu.`, needXu: err.cost, xu: err.have });
-    }
+    if (err instanceof economy.NoCups) return res.status(409).json({ error: `Khay của bạn chỉ còn ${err.have} ly để tặng.`, noCups: true, have: err.have });
     throw err;
   }
   const summary = treatSummary(q.treatCounts.all(p.id));
   const reply = funnyReply(drink, summary.counts[drink]);
   realtime.notifyUser(p.user_id, {
-    kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname, qty, message, total: summary.counts[drink], funny: reply, toTray: qty,
+    kind: `treat:${drink}`, postId: p.id, actor: req.user.nickname, qty, message, total: summary.counts[drink], funny: reply,
+    toGlass: got.toGlass, toTray: got.toTray, tray: got.tray,
   });
   realtime.broadcast('treat', { postId: p.id, tableId: p.table_id, drink, qty });
-  res.json({ ok: true, treats: summary, reply, count: summary.counts[drink], paid: economy.describe(plan), wallet: economy.wallet(req.user.id) });
+  res.json({ ok: true, treats: summary, reply, count: summary.counts[drink], left: economy.giftable(req.user.id, drink), wallet: economy.wallet(req.user.id) });
 });
 
 // Quầy quà của tôi: tổng số ly nhận được theo món + lời nhắn

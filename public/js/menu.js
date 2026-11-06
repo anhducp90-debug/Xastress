@@ -93,12 +93,12 @@ export function createMenu(ctx) {
     return html`<div class="wallet-box">
       ${e.paywall
         ? html`<div class="wallet"><span>👛 <b id="xuNow">${w.xu}</b> xu</span>
-            <span>🎟️ Phiếu: ${w.vouchers.self} ly cho mình · ${w.vouchers.gift} ly để tặng</span>
+            <span>🎟️ Phiếu gọi ly miễn phí: ${w.vouchers.self}</span>
             ${w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : ''}</div>`
-        : html`<div class="wallet free"><span>🎉 Quán đang <b>miễn phí</b> cho mọi người</span>
-            <span class="tag">${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí</span></div>
-            <div class="tag center">Bạn đang giữ phiếu chào mừng: ${w.vouchers.self} ly cho mình + ${w.vouchers.gift} ly để tặng (dùng khi quán tính phí).</div>`}
-      ${hasTray ? html`<div class="tray">🧺 Khay của bạn: ${trayChips(w.tray)} <span class="tag">– uống hoặc tặng lại</span></div>` : ''}
+        : html`<div class="wallet free"><span>🎉 Quán đang <b>miễn phí</b> · gọi 1 ly được <b>tặng kèm 1 ly</b> để mời người khác</span>
+            <span class="tag">${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí</span></div>`}
+      ${hasTray ? html`<div class="tray">🎁 Ly để tặng: ${trayChips(w.tray)}</div>` : ''}
+      ${w.glasses.length ? html`<div class="tray">🥤 Ly của bạn (uống miễn phí): ${w.glasses.map((k) => html`<span class="tchip">${drinkById[k] ? drinkById[k].icon : '🍵'}</span>`)}</div>` : ''}
     </div>`;
   }
   // Mở bot Telegram để mua xu (mã liên kết dùng một lần)
@@ -117,17 +117,17 @@ export function createMenu(ctx) {
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-buyxu]'); if (b) { e.preventDefault(); buyXu(b); } });
   const needXuHtml = (w, need) => html`<div class="need-xu">Cần ${need} xu, ví đang có ${w.xu} xu.
     ${w.telegram && w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : html`<span class="tag">Quán chưa mở bán xu.</span>`}</div>`;
-  const quote = (drink, purpose, qty = 1) => api(`/wallet/quote?drink=${drink}&purpose=${purpose}&qty=${qty}`);
+  const quote = (drink) => api(`/wallet/quote?drink=${drink}`);
 
   async function openMenu(mood) {
     const rec = mood && MOOD_PICK[mood] ? MOOD_PICK[mood].drinks : [];
     const [st, w, pk] = await Promise.all([getStatus(), api('/wallet').catch(() => null), api('/ai/packs').catch(() => ({ packs: [] }))]);
     const active = new Set(pk.packs.map((p) => p.drink));
     const priceOf = (d) => {
-      const n = w && w.tray[d.id];
-      if (n) return `Có ×${n} trong khay`;
-      if (w && !w.economy.paywall) return 'Miễn phí';
-      return `${st.prices[d.id]} xu`;
+      if (!w) return '';
+      if (!w.economy.paywall) return 'Miễn phí · +1 ly tặng';
+      if (w.glasses.includes(d.id)) return 'Ly của bạn 🥤';
+      return `${st.prices[d.id]} xu · +1 ly tặng`;
     };
     openModal(html`
       <div class="menu-board">
@@ -144,8 +144,9 @@ export function createMenu(ctx) {
             <span class="mi-name">${d.name}</span>
             <span class="mi-price">${priceOf(d)}</span>
             <span class="mi-tag">${d.tag}</span>
+            ${w && w.tray[d.id] ? html`<span class="mi-tray">🎁 ${w.tray[d.id]} ly để tặng</span>` : ''}
           </button>`)}</div>
-        <p class="chalk-foot">Ly được người khác tặng nằm trong khay: uống hoặc tặng lại cho người khác 🔁 · Bài tập nhanh luôn miễn phí.</p>
+        <p class="chalk-foot">Gọi 1 ly: uống 1 ly + được tặng kèm 1 ly để mời người khác. Được tặng nhiều ly: 1 ly là của bạn, còn lại để tặng tiếp 🔁 · Bài tập nhanh luôn miễn phí.</p>
       </div>`, 'menu');
     $('#modalBody').onclick = (e) => {
       const m = e.target.closest('[data-mood]');
@@ -157,13 +158,12 @@ export function createMenu(ctx) {
 
   async function order(id, emit = true, tab) {
     const d = drinkById[id];
-    const s = ctx.getSocket();
-    if (emit && s) s.emit('order', id);
     const st = await getStatus();
     const current = tab || (st.enabled ? 'ai' : 'quick');
     openModal(html`
       <button class="linkish" id="backMenu">← Xem lại thực đơn</button>
       <div class="served"><span class="served-icon">${d.icon}</span><div><h2>${d.name}</h2><p class="tag">${d.desc}</p></div></div>
+      <div id="orderBar" class="order-bar"></div>
       <div class="tabs served-tabs">
         <button class="tab ${current === 'ai' ? 'active' : ''}" data-tab="ai">💬 Tâm sự với Cô Tư AI</button>
         <button class="tab ${current === 'quick' ? 'active' : ''}" data-tab="quick">🧘 Bài tập nhanh</button>
@@ -172,9 +172,34 @@ export function createMenu(ctx) {
       <div id="activity"></div>`, 'menu');
     $('#backMenu').onclick = () => openMenu();
     for (const t of document.querySelectorAll('.served-tabs .tab')) t.onclick = () => order(id, false, t.dataset.tab);
+    renderOrderBar(id, st, current);
     if (current === 'ai') aiPanel(id, st);
     else if (current === 'gift') giftPanel(id);
     else { const run = ACTIVITIES[id]; $('#activity').innerHTML = run.view().s; run.bind(); }
+  }
+
+  // Gọi 1 ly = uống 1 ly (mở gói Cô Tư AI) + tặng kèm 1 ly vào khay
+  async function renderOrderBar(id, st, current) {
+    const bar = $('#orderBar');
+    const [w, pk, qt] = await Promise.all([api('/wallet'), api('/ai/packs'), quote(id)]);
+    if (!bar.isConnected) return;
+    const pack = st.enabled && pk.packs.find((p) => p.drink === id);
+    const tray = w.tray[id] || 0;
+    bar.innerHTML = html`
+      ${pack ? html`<span class="ob-status">☕ Đang uống – còn ${pack.turnsLeft} lượt tâm sự</span>` : ''}
+      <button class="btn warm" id="doOrder" ${qt.enough ? '' : raw('disabled')}>🧋 ${pack ? 'Gọi thêm' : 'Gọi'} 1 ly – ${qt.text}${qt.bonus ? ' · tặng kèm 1 ly 🎁' : ''}</button>
+      ${qt.enough ? '' : needXuHtml(w, qt.xu)}
+      <span class="ob-tray">🎁 Ly ${drinkById[id].name.toLowerCase()} để tặng: <b>${tray}</b></span>`.s;
+    const b = $('#doOrder');
+    if (b) b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await api('/order', { body: { drink: id } });
+        const s = ctx.getSocket(); if (s) s.emit('order', id);
+        toast(`Cô Tư mang ra 1 ly ${drinkById[id].name.toLowerCase()}${r.plan && r.plan.bonus ? ` + 1 ly tặng kèm (giờ bạn có ${r.plan.tray} ly để tặng)` : ''} ☕`);
+        order(id, false, current);
+      } catch (err) { toast(err.message, true); b.disabled = false; }
+    };
   }
 
   // ---------- Cô Tư AI ----------
@@ -184,22 +209,10 @@ export function createMenu(ctx) {
       box.innerHTML = html`<div class="done-box">🌙 Cô Tư AI đang nghỉ (quán chưa bật AI). Bạn dùng <b>Bài tập nhanh</b> hoặc kể chuyện ở các bàn nhé.</div>`.s;
       return;
     }
-    const [w, pk, qt] = await Promise.all([api('/wallet'), api('/ai/packs'), quote(drink, 'self')]);
+    const pk = await api('/ai/packs');
     const pack = pk.packs.find((p) => p.drink === drink);
     if (!pack) {
-      box.innerHTML = html`
-        <div class="ai-buy">
-          <p>Ly này kèm <b>${st.turns} lượt tâm sự</b> với Cô Tư AI, dùng trong <b>${st.hours} giờ</b>.</p>
-          <button class="btn big warm" id="buyPack" ${qt.enough ? '' : raw('disabled')}>🧋 Gọi ly này – trả bằng ${qt.text}</button>
-          ${qt.enough ? '' : needXuHtml(w, qt.xu)}
-          ${PRIVACY}
-        </div>`.s;
-      const b = $('#buyPack');
-      if (b) b.onclick = async () => {
-        b.disabled = true;
-        try { const r = await api('/ai/packs', { body: { drink } }); if (r.paid) toast(`Đã trả bằng ${r.paid}. Cô Tư mang nước ra đây!`); aiChat(r.pack); }
-        catch (err) { toast(err.message, true); b.disabled = false; }
-      };
+      box.innerHTML = html`<div class="ai-buy"><p>👆 Gọi 1 ly ở trên để mở <b>${st.turns} lượt tâm sự</b> với Cô Tư AI (dùng trong ${st.hours} giờ).</p>${PRIVACY}</div>`.s;
       return;
     }
     aiChat(pack);
@@ -282,51 +295,66 @@ export function createMenu(ctx) {
   }
 
   // ---------- Mời nước kèm lời nhắn ----------
-  function treatForm(drinkId, postId, onDone, pickDrink = false) {
+  // tray: số ly để tặng theo món (từ /wallet)
+  function treatForm(drinkId, postId, onDone, tray, pickDrink = false) {
     const id = `tf${postId}`;
+    const avail = DRINKS.filter((d) => tray[d.id] > 0);
+    const first = pickDrink ? (tray[drinkId] ? drinkId : (avail[0] && avail[0].id)) : drinkId;
+    if (!first || !tray[first]) {
+      return {
+        html: html`<div class="no-cups">Bạn chưa có ly ${pickDrink ? '' : drinkById[drinkId].name.toLowerCase() + ' '}nào để tặng.
+          <button type="button" class="btn small warm" data-go-menu>🧋 Gọi 1 ly (được tặng kèm 1 ly)</button></div>`,
+        bind: () => { const g = document.querySelector('[data-go-menu]'); if (g) g.onclick = () => (pickDrink ? openMenu() : order(drinkId, false, 'gift')); },
+      };
+    }
     return {
       html: html`
         <form class="treat-form" id="${id}">
-          ${pickDrink ? html`<div class="drink-pick">${DRINKS.map((d) => html`<label title="${d.name}"><input type="radio" name="drink" value="${d.id}" ${d.id === drinkId ? raw('checked') : ''}><span>${d.icon}</span></label>`)}</div>` : ''}
-          <div class="qty-pick">Mời <label><input type="radio" name="qty" value="1" checked><span>1 ly</span></label><label><input type="radio" name="qty" value="3"><span>3 ly</span></label><label><input type="radio" name="qty" value="10"><span>Cả két 10 ly 🎉</span></label></div>
+          ${pickDrink ? html`<div class="drink-pick">${avail.map((d) => html`<label title="${d.name}: ${tray[d.id]} ly"><input type="radio" name="drink" value="${d.id}" ${d.id === first ? raw('checked') : ''}><span>${d.icon}<i>${tray[d.id]}</i></span></label>`)}</div>` : ''}
+          <div class="qty-pick">Tặng
+            <input type="number" name="qty" min="1" max="${tray[first]}" value="1" inputmode="numeric">
+            ly · <button type="button" class="btn small" data-q="3">3</button><button type="button" class="btn small" data-q="10">10</button><button type="button" class="btn small" data-q="all">Tất cả</button>
+          </div>
           <input name="message" maxlength="200" placeholder="Lời nhắn kèm ly nước (tuỳ chọn) – tử tế thôi nha 💛">
           <div class="suggest">${KIND_LINES.map((l) => html`<button type="button" data-s="${l}">${l}</button>`)}</div>
           <p class="pay-note" data-pay></p>
           <p class="err" data-err></p>
-          <button class="btn warm" type="submit">🎁 Mời</button>
+          <button class="btn warm" type="submit">🎁 Tặng</button>
         </form>`,
       bind: () => {
         const f = document.getElementById(id);
-        f.querySelector('.suggest').onclick = (e) => { const b = e.target.closest('[data-s]'); if (b) f.message.value = b.dataset.s; };
+        const cur = () => (pickDrink ? f.drink.value : drinkId);
         const note = f.querySelector('[data-pay]');
-        const refresh = async () => {
-          try {
-            const qt = await quote(pickDrink ? f.drink.value : drinkId, 'gift', Number(f.qty.value));
-            note.textContent = qt.enough ? `Trả bằng: ${qt.text}${qt.cups ? ' (tặng lại ly bạn được tặng 🔁)' : ''}` : `Cần ${qt.xu} xu – ví đang có ${qt.balance} xu.`;
-            note.classList.toggle('warn', !qt.enough);
-          } catch { note.textContent = ''; }
+        const refresh = () => {
+          const max = tray[cur()] || 0;
+          f.qty.max = max;
+          if (Number(f.qty.value) > max) f.qty.value = max;
+          if (Number(f.qty.value) < 1) f.qty.value = 1;
+          note.textContent = `Khay còn ${max} ly ${drinkById[cur()].name.toLowerCase()} để tặng → tặng ${f.qty.value} ly, còn lại ${max - Number(f.qty.value)} ly.`;
         };
-        f.onchange = (e) => { if (e.target.name === 'drink' || e.target.name === 'qty') refresh(); };
+        f.onclick = (e) => {
+          const sg = e.target.closest('[data-s]'); if (sg) f.message.value = sg.dataset.s;
+          const qb = e.target.closest('[data-q]');
+          if (qb) { f.qty.value = qb.dataset.q === 'all' ? tray[cur()] : qb.dataset.q; refresh(); }
+        };
+        f.oninput = refresh;
+        f.onchange = refresh;
         refresh();
         f.onsubmit = async (e) => {
           e.preventDefault();
           const err = f.querySelector('[data-err]'); err.textContent = '';
-          const drink = pickDrink ? f.drink.value : drinkId;
+          const drink = cur(), qty = Number(f.qty.value);
           const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
           try {
-            const r = await api(`/posts/${postId}/treat`, { body: { drink, qty: Number(f.qty.value), message: f.message.value } });
+            const r = await api(`/posts/${postId}/treat`, { body: { drink, qty, message: f.message.value } });
+            tray[drink] = r.left;
             const s = ctx.getSocket(); if (s) s.emit('emote', 'heart');
-            onDone(r, drink, Number(f.qty.value));
+            onDone(r, drink, qty);
           } catch (ex) {
             err.textContent = ex.data && ex.data.blocked
               ? `🙅 ${ex.message} ${ex.data.reason || ''} Thử một câu gợi ý bên dưới nhé 👇`
               : ex.message;
-            if (ex.status === 402) {
-              err.textContent = '';
-              const old = f.querySelector('.need-xu'); if (old) old.remove();
-              const w = await api('/wallet').catch(() => null);
-              if (w) err.insertAdjacentHTML('afterend', needXuHtml(w, ex.data.needXu).s);
-            }
+            if (ex.data && ex.data.noCups) { tray[drink] = ex.data.have; refresh(); }
             btn.disabled = false;
           }
         };
@@ -337,7 +365,7 @@ export function createMenu(ctx) {
     const d = drinkById[drink];
     return html`<div class="treat-done">
       <div class="td-head">🎉 Đã mời ${qty} ly ${d.name.toLowerCase()} ${d.icon}</div>
-      ${r.paid ? html`<small class="tag">Trả bằng: ${r.paid}. Ly đã vào khay người nhận – họ có thể uống hoặc tặng lại.</small>` : ''}
+      <small class="tag">Khay của bạn còn ${r.left} ly ${d.name.toLowerCase()} để tặng. Người nhận có 1 ly để uống, phần còn lại họ tặng tiếp được 🔁</small>
       <div class="reply-bubble"><b>Người được mời:</b> “${r.reply}”</div>
       <div class="counters">${raw(treatChips(r.treats))}</div>
       <small class="tag">Lời đáp vui do quán tự tạo theo số ly người ấy đã nhận.</small>
@@ -346,9 +374,15 @@ export function createMenu(ctx) {
 
   async function giftPanel(drinkId) {
     const box = $('#activity');
-    box.innerHTML = html`<p class="tag">Chọn một người đang cần động viên, mời họ ly ${drinkById[drinkId].name.toLowerCase()} kèm lời nhắn. Ly sẽ vào khay của họ để uống (gói Cô Tư AI) hoặc tặng lại người khác.</p><div id="giftList"><p class="empty">Đang xem ai cần một ly nước…</p></div>`.s;
+    box.innerHTML = html`<p class="tag">Chọn một người đang cần động viên, tặng họ ly ${drinkById[drinkId].name.toLowerCase()} kèm lời nhắn. Bạn chỉ tặng được số ly đang có để tặng.</p><div id="giftList"><p class="empty">Đang xem ai cần một ly nước…</p></div>`.s;
     try {
-      const { posts } = await api('/posts?limit=30');
+      const [{ posts }, w] = await Promise.all([api('/posts?limit=30'), api('/wallet')]);
+      if (!w.tray[drinkId]) {
+        const tf0 = treatForm(drinkId, 0, null, w.tray);
+        const el0 = $('#giftList'); if (!el0) return;
+        el0.innerHTML = tf0.html.s; tf0.bind();
+        return;
+      }
       const need = posts.filter((p) => !p.isMine && !p.resolved).slice(0, 12);
       const el = $('#giftList');
       if (!el) return;
@@ -365,7 +399,7 @@ export function createMenu(ctx) {
         if (!b) return;
         const row = b.closest('.gift-row');
         const slot = row.querySelector('.gift-slot');
-        const tf = treatForm(drinkId, b.dataset.openTreat, (r, drink, qty) => { slot.innerHTML = treatResult(r, drink, qty).s; row.classList.add('gifted'); });
+        const tf = treatForm(drinkId, b.dataset.openTreat, (r, drink, qty) => { slot.innerHTML = treatResult(r, drink, qty).s; row.classList.add('gifted'); renderOrderBar(drinkId, aiStatus || {}, 'gift'); }, w.tray);
         b.remove();
         slot.innerHTML = tf.html.s;
         tf.bind();
@@ -374,8 +408,9 @@ export function createMenu(ctx) {
   }
 
   // Mời nước ngay từ trang tâm sự
-  function mountTreat(container, postId, onDone) {
-    const tf = treatForm('trada', postId, (r, drink, qty) => { container.innerHTML = treatResult(r, drink, qty).s; if (onDone) onDone(r); }, true);
+  async function mountTreat(container, postId, onDone) {
+    const w = await api('/wallet');
+    const tf = treatForm('trada', postId, (r, drink, qty) => { container.innerHTML = treatResult(r, drink, qty).s; if (onDone) onDone(r); }, w.tray, true);
     container.innerHTML = tf.html.s;
     tf.bind();
   }

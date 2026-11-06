@@ -84,13 +84,22 @@ CREATE TABLE IF NOT EXISTS treats (
 );
 CREATE INDEX IF NOT EXISTS idx_treats_post ON treats(post_id);
 CREATE INDEX IF NOT EXISTS idx_treats_to ON treats(to_user, created_at DESC);
--- Khay nước: những ly mỗi người đang có (được tặng) để uống hoặc tặng lại
+-- Khay nước: qty = số ly để TẶNG; glass = có "ly của mình" để uống
 CREATE TABLE IF NOT EXISTS cups (
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   drink       TEXT NOT NULL,
   qty         INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, drink)
 );
+-- Lịch sử gọi ly (để giới hạn số ly miễn phí mỗi ngày)
+CREATE TABLE IF NOT EXISTS orders (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  drink       TEXT NOT NULL,
+  method      TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, created_at);
 -- Liên kết tài khoản quán với Telegram (để mua xu qua bot)
 CREATE TABLE IF NOT EXISTS tg_links (
   user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -142,7 +151,8 @@ function addColumn(table, col, def) {
 addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 0');          // ví xu (mua qua bot Telegram)
 addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");    // (cũ, không dùng nữa)
 addColumn('users', 'voucher_self', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí cho mình
-addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí để tặng
+addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // (cũ, không dùng nữa: ly tặng kèm khi gọi thay thế)
+addColumn('cups', 'glass', 'INTEGER NOT NULL DEFAULT 0');         // 1 = đang có "ly của mình" món này để uống
 addColumn('notifications', 'message', "TEXT NOT NULL DEFAULT ''");
 addColumn('notifications', 'qty', 'INTEGER NOT NULL DEFAULT 1');
 
