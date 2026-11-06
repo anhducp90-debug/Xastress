@@ -436,6 +436,7 @@ async function openPost(id, back) {
       <div id="comments">${p.comments.length ? p.comments.map((c) => html`
         <div class="comment ${c.byAuthor ? 'author' : ''}">
           <div class="meta">${c.author ? html`${avatarCanvas(c.author.avatar)} <b>${c.author.nickname}</b>` : html`🎭 <b>Người kể chuyện</b>`}
+            ${c.bot ? html`<span class="ai-tag" title="Trợ lý AI của quán, không phải người thật">AI</span>` : ''}
             ${c.byAuthor && c.author ? html`<span class="mood">người kể</span>` : ''} · ${ago(c.createdAt)}
             ${c.isMine || me.isAdmin ? html`<button class="linkish" data-delc="${c.id}">xoá</button>` : html`<button class="linkish" data-report="comment" data-id="${c.id}">🚩</button>`}
           </div>

@@ -26,7 +26,7 @@ const q = {
   reactCounts: db.prepare('SELECT kind, COUNT(*) n FROM reactions WHERE post_id = ? GROUP BY kind'),
   myReacts: db.prepare('SELECT kind FROM reactions WHERE post_id = ? AND user_id = ?'),
   commentCount: db.prepare('SELECT COUNT(*) n FROM comments WHERE post_id = ? AND hidden = 0'),
-  comments: db.prepare(`SELECT c.*, u.nickname, u.avatar FROM comments c JOIN users u ON u.id = c.user_id
+  comments: db.prepare(`SELECT c.*, u.nickname, u.avatar, u.is_bot FROM comments c JOIN users u ON u.id = c.user_id
     WHERE c.post_id = ? AND c.hidden = 0 ORDER BY c.id ASC LIMIT 300`),
   comment: db.prepare('SELECT * FROM comments WHERE id = ?'),
   insertPost: db.prepare('INSERT INTO posts (user_id, table_id, mood, content, anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
@@ -97,6 +97,7 @@ function shapePost(p, viewer, { full = false } = {}) {
         byAuthor,
         // Nếu chủ tâm sự ẩn danh, bình luận của họ cũng ẩn danh
         author: byAuthor && p.anonymous ? null : { nickname: c.nickname, avatar: JSON.parse(c.avatar) },
+        bot: !!c.is_bot,
         isMine: !!viewer && viewer.id === c.user_id,
         createdAt: c.created_at,
       };
@@ -164,6 +165,7 @@ router.post('/posts', requireUser, requireSeated, (req, res) => {
   const info = q.insertPost.run(req.user.id, tableId, m, maskBadWords(content), anonymous ? 1 : 0, Date.now());
   const post = shapePost(q.post.get(info.lastInsertRowid), req.user);
   realtime.broadcast('post:new', { id: post.id, tableId, mood: m });
+  require('./host').onNewPost(post.id); // chưa ai hỏi han thì Cô Tư vào động viên
   res.json({ post });
 });
 

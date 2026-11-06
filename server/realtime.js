@@ -27,6 +27,13 @@ function init(server, { userFromToken, cookieName, publicUser }) {
   const { checkKind } = require('./kindcheck');
   const { funnyReply } = require('./funny');
   io = new Server(server, { serveClient: true, cors: { origin: false } });
+  const host = require('./host');
+  const pushChat = (item) => {
+    const h = history.get(item.channel); h.push(item); if (h.length > HISTORY) h.shift();
+    io.to(`ch:${item.channel}`).emit('chat', item);
+  };
+  host.init({ io, players, push: pushChat, roomSize: (ch) => (io.sockets.adapter.rooms.get(`ch:${ch}`) || { size: 0 }).size });
+  host.setHistory((ch) => history.get(ch) || []);
 
   const q = {
     blocked: db.prepare('SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_id = ?) OR (user_id = ? AND blocked_id = ?)'),
@@ -61,6 +68,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
     socket.emit('chat:history', { channel: 'public', items: history.get('public') });
     socket.broadcast.emit('p:join', pub(p));
     io.emit('online', countUnique());
+    host.onJoin(p, firstSocket);
 
     // Chưa gọi ly trong lượt vào quán này thì nhắc gọi ly
     const gate = (ack) => {
@@ -101,10 +109,17 @@ function init(server, { userFromToken, cookieName, publicUser }) {
       if (channel !== 'public' && p.channel !== channel) return;
       if (!hit(`chat:${p.userId}`, 8, 15e3)) return reply(ack, { ok: false, error: 'Nói chậm thôi, mọi người nghe không kịp đâu ☺' });
       const item = { channel, sid: p.sid, uid: p.userId, nickname: p.nickname, text: maskBadWords(t), at: Date.now() };
-      const h = history.get(channel); h.push(item); if (h.length > HISTORY) h.shift();
-      io.to(`ch:${channel}`).emit('chat', item);
+      pushChat(item);
       if (hasCrisisSignal(t)) socket.emit('support');
       reply(ack, { ok: true });
+      host.onChat(p, item); // gọi "Cô Tư ơi" thì cô đáp
+
+    });
+
+    // ---- Bình chọn của Cô Tư ----
+    socket.on('poll:vote', (m, ack) => {
+      if (!gate(ack)) return;
+      reply(ack, host.vote(p.userId, m && m.id, m && m.option));
     });
 
     // ---- Tin nhắn riêng ----
@@ -188,6 +203,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
     socket.on('order', (drink) => {
       if (!DRINKS.includes(drink) || !hit(`order:${p.userId}`, 6, 60e3)) return;
       io.emit('order', { sid: p.sid, drink, nickname: p.nickname });
+      host.onOrder(p, drink);
     });
 
     socket.on('profile', () => {
@@ -201,6 +217,7 @@ function init(server, { userFromToken, cookieName, publicUser }) {
 
     socket.on('disconnect', () => {
       players.delete(socket.id);
+      host.onLeave(socket.id);
       if (![...players.values()].some((x) => x.userId === p.userId)) seat.offline(p.userId);
       io.emit('p:leave', socket.id);
       io.emit('online', countUnique());

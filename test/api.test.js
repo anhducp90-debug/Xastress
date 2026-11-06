@@ -10,7 +10,8 @@ process.env.DB_PATH = path.join(tmp, 'test.db');
 process.env.ADMIN_USERNAMES = 'quanly';
 process.env.AI_ENABLED = '0'; // test không gọi API thật
 process.env.AUTH_RATE_LIMIT = '1000';
-process.env.SEAT_GATE = '0'; // test riêng bên dưới bật lại luật "gọi ly mới vào quán"
+process.env.SEAT_GATE = '0';
+process.env.HOST_ENABLED = '0'; // test riêng bên dưới gọi trực tiếp các hàm của Cô Tư // test riêng bên dưới bật lại luật "gọi ly mới vào quán"
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.TELEGRAM_BOT_USERNAME = 'xastress_bot';
 const { server } = require('../server/index.js');
@@ -365,4 +366,65 @@ test('luật "gọi 1 ly mới vào quán" + chat 3 kênh, tin riêng, chặn, �
     A.s.close(); B.s.close();
     config.seatGate = false;
   }
+});
+
+test('Cô Tư hoạt náo: trả lời khi được gọi, bình chọn + tổng kết, khơi chuyện, bình luận tâm sự bị bỏ trống', async () => {
+  const host = require('../server/host');
+  const { io: ioc } = require('socket.io-client');
+  const a = client(), b = client();
+  await a('/auth/register', { username: 'host_a', password: 'matkhau123', nickname: 'Khách Hỏi' });
+  await b('/auth/register', { username: 'host_b', password: 'matkhau123', nickname: 'Khách Vote' });
+  const conn = (c) => new Promise((resolve) => {
+    const s = ioc(base, { extraHeaders: { Cookie: c.cookie() }, transports: ['websocket'] });
+    s.on('world:init', (w) => resolve({ s, me: w.you }));
+  });
+  const waitFor = (s, ev, pred) => new Promise((r) => { const f = (x) => { if (pred(x)) { s.off(ev, f); r(x); } }; s.on(ev, f); });
+  const emit = (s, ev, data) => new Promise((r) => s.emit(ev, data, r));
+  const A = await conn(a), B = await conn(b);
+  try {
+    // Được gọi tên -> Cô Tư đáp trong chat cả quán
+    let got = waitFor(B.s, 'chat', (m) => m.npc);
+    await emit(A.s, 'chat', { channel: 'public', text: 'Cô Tư ơi, hôm nay quán có gì vui không?' });
+    const rep = await got;
+    assert.strictEqual(rep.nickname, 'Cô Tư');
+    assert.match(rep.text, /Khách Hỏi/);
+    // Gọi tên kèm dấu hiệu khủng hoảng -> trả lời an toàn kèm đường dây nóng
+    got = waitFor(B.s, 'chat', (m) => m.npc);
+    await emit(A.s, 'chat', { channel: 'public', text: 'cô tư ơi con muốn chết cho xong' });
+    assert.match((await got).text, /096 306 1414/);
+
+    // Bình chọn
+    got = waitFor(B.s, 'chat', (m) => m.poll);
+    const poll = host.startPoll('public', 'Trà đá hay trà chanh?', ['Trà đá', 'Trà chanh']);
+    const pm = await got;
+    assert.deepStrictEqual(pm.poll.options, ['Trà đá', 'Trà chanh']);
+    const upd = waitFor(A.s, 'poll:update', (u) => u.id === poll.id);
+    assert.ok((await emit(B.s, 'poll:vote', { id: poll.id, option: 0 })).ok);
+    assert.deepStrictEqual((await upd).counts, [1, 0]);
+    await emit(A.s, 'poll:vote', { id: poll.id, option: 0 });
+    got = waitFor(B.s, 'chat', (m) => m.npc && /Trà đá/.test(m.text) && /2 phiếu/.test(m.text));
+    await host.closePoll(poll.id);
+    await got;
+    assert.strictEqual((await emit(B.s, 'poll:vote', { id: poll.id, option: 1 })).ok, false, 'đã đóng thì không bầu được');
+
+    // Khơi chuyện ở bàn chủ đề
+    got = waitFor(A.s, 'chat', (m) => m.npc && m.channel === 'table:hochanh');
+    A.s.emit('chat:join', 'table:hochanh');
+    await new Promise((r) => setTimeout(r, 50));
+    await host.startTopic('table:hochanh', false);
+    assert.match((await got).text, /\S/);
+
+    // Tâm sự chưa ai hỏi han -> Cô Tư bình luận trước, có nhãn AI
+    const pid = (await a('/posts', { tableId: 'congviec', content: 'Không ai hiểu mình cả, mệt mỏi quá' })).data.post.id;
+    assert.ok(await host.commentOnPost(pid));
+    const post = (await b(`/posts/${pid}`)).data.post;
+    assert.strictEqual(post.comments.length, 1);
+    assert.deepStrictEqual([post.comments[0].bot, post.comments[0].author.nickname], [true, 'Cô Tư (AI)']);
+    assert.strictEqual(await host.commentOnPost(pid), null, 'đã có bình luận thì không vào nữa');
+    assert.ok((await a('/notifications')).data.items.some((n) => n.actor === 'Cô Tư (AI)'));
+    // Cô Tư không tính vào số khách của quán (ngưỡng 200 khách)
+    const w = (await a('/wallet')).data;
+    const humans = require('../server/db').prepare('SELECT COUNT(*) n FROM users WHERE is_bot = 0 AND banned = 0').get().n;
+    assert.strictEqual(w.economy.participants, humans);
+  } finally { A.s.close(); B.s.close(); }
 });

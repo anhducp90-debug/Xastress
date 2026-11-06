@@ -36,6 +36,14 @@ Mỗi tâm sự mới là một ly trà đá đặt lên bàn.
 Chọn tâm trạng để Cô Tư gợi ý món. Gọi xong, Cô Tư đáp lời và nhân vật cầm ly nước trên tay cho cả quán thấy.
 Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của người dùng, không gửi lên máy chủ.
 
+**🍵 Cô Tư hoạt náo – người giữ lửa cho quán**
+- **Chào khách** mới vào bằng tên trong chat cả quán và mời gọi ly; ai vào mà chưa gọi ly sau 1 phút thì cô **nhắc riêng**.
+- **Rao** khi có người gọi ly, rủ người khác ngồi chung / tặng ly kèm.
+- **Khơi chuyện khi quán im lặng** (`HOST_QUIET_MINUTES`, mặc định 4 phút): câu hỏi mở hoặc **bình chọn vui** (A/B/C, bấm chọn, kết quả cập nhật trực tiếp, hết giờ cô tổng kết). Các bàn chủ đề có từ 2 người trở lên cũng được thả câu hỏi đúng chủ đề.
+- **Gọi "Cô Tư ơi" / "@Cô Tư"** trong chat là cô đáp (tối đa 4 lần/người/10 phút). Có dấu hiệu khủng hoảng thì cô thôi đùa và đưa đường dây nóng.
+- **Tâm sự không bị bỏ trống**: sau ~2 phút (`HOST_POST_DELAY_SEC`) chưa ai bình luận thì Cô Tư vào động viên trước. Tin và bình luận của Cô Tư luôn gắn nhãn **AI**; tài khoản Cô Tư không tính vào số khách của quán.
+- Có `ANTHROPIC_API_KEY` thì Cô Tư tự nghĩ câu hỏi, câu trả lời, lời tổng kết, bình luận (Claude, mức suy nghĩ thấp cho nhanh); không có thì dùng kho câu soạn sẵn trong `server/host.js`. `HOST_ENABLED=0` để tắt hẳn.
+
 **☕ Vào quán phải gọi 1 ly**
 - Mỗi lượt vào quán (online lại sau khi vắng hơn 30 phút – `VISIT_GAP_MINUTES`), khách được mời gọi 1 ly trước. Thực đơn tự mở ra, khung chat và các nút tương tác bị khoá cho tới khi gọi ly.
 - Chưa gọi ly thì chỉ xem: server chặn chat, đăng tâm sự, bình luận, bày tỏ cảm xúc, tặng nước. Người đã gọi ly có biểu tượng ☕ trước tên.
@@ -111,6 +119,7 @@ server/
   seat.js         Luật "gọi 1 ly mới vào quán" (lượt vào quán)
   dmRoutes.js     Tin riêng & danh sách chặn
   kindcheck.js    Kiểm tra lời nhắn tử tế (từ khoá + Claude)
+  host.js         Cô Tư hoạt náo: chào khách, khơi chuyện, bình chọn, trả lời, bình luận tâm sự
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css

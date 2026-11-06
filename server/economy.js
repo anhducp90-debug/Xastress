@@ -16,7 +16,7 @@ const { DRINK_INFO } = require('./constants');
 const FREE_ORDERS_PER_DAY = 10; // chống "gọi ly miễn phí" để gom ly tặng
 
 const q = {
-  participants: db.prepare('SELECT COUNT(*) n FROM users WHERE banned = 0'),
+  participants: db.prepare('SELECT COUNT(*) n FROM users WHERE banned = 0 AND is_bot = 0'),
   user: db.prepare('SELECT xu, voucher_self FROM users WHERE id = ?'),
   tray: db.prepare('SELECT drink, qty, glass FROM cups WHERE user_id = ? AND (qty > 0 OR glass > 0)'),
   cup: db.prepare('SELECT qty, glass FROM cups WHERE user_id = ? AND drink = ?'),

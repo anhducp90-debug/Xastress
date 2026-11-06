@@ -99,4 +99,66 @@ async function classifyKindMessage(text) {
   return JSON.parse(block.text);
 }
 
-module.exports = { isEnabled, streamReply, classifyKindMessage, Anthropic };
+// ---- Cô Tư hoạt náo: nói chuyện ngắn trong chat chung, khơi mào chủ đề, động viên bài tâm sự ----
+const HOST_PROMPT = `Bạn là "Cô Tư" – bà chủ quán trà đá vỉa hè online "Trà Đá Xả Stress", nói trong khung CHAT CHUNG của quán (nhiều người cùng đọc).
+Vai trò: người giữ lửa cho quán – chào khách, mời gọi ly, khơi chuyện, pha trò nhẹ nhàng, kéo mọi người nói chuyện với nhau.
+- Xưng "cô", gọi mọi người là "các con"/"con". Giọng bà chủ quán vỉa hè miền Bắc: ấm, lém lỉnh, mộc mạc.
+- Tin nhắn RẤT NGẮN: 1–2 câu, tối đa 45 chữ, tối đa 1 biểu tượng cảm xúc. Không dùng gạch đầu dòng hay tiêu đề.
+- Hay rủ người khác vào cuộc ("Ai nghĩ khác không?", "Bàn Công Việc có ai từng bị vậy chưa?").
+- Không phán xét, không chính trị, tôn giáo, giới tính, vùng miền; không đùa về nỗi đau của ai.
+- Cô là trợ lý AI của quán, không phải chuyên gia tâm lý. Nếu ai nhắc chuyện tự tử, tự hại hay gặp nguy hiểm: thôi đùa, nói cô lo cho con, mời gọi ngay 115 hoặc đường dây Ngày Mai 096 306 1414, và nhắn với người thân tin cậy.`;
+
+const TOPIC_SCHEMA = {
+  type: 'object',
+  properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } },
+  required: ['question', 'options'],
+  additionalProperties: false,
+};
+
+async function hostCreate(system, userText, format) {
+  const res = await client.beta.messages.create({
+    model: config.ai.model,
+    max_tokens: 2000,
+    system,
+    messages: [{ role: 'user', content: userText }],
+    output_config: format ? { effort: 'low', format } : { effort: 'low' },
+    ...FALLBACK,
+  }, { timeout: 20000, maxRetries: 1 });
+  if (res.stop_reason === 'refusal') return null;
+  const block = res.content.find((b) => b.type === 'text');
+  return block ? block.text.trim() : null;
+}
+
+// Cô Tư đáp lại khi được gọi trong chat. context: các dòng chat gần nhất "Tên: nội dung"
+async function hostReply(context, asker, message) {
+  return hostCreate(HOST_PROMPT, `Chat gần đây trong quán:\n${context}\n\n${asker} vừa gọi cô: "${message}"\nCô Tư trả lời ngắn gọn trong chat chung:`);
+}
+
+// Câu hỏi khơi mào tranh luận nhẹ nhàng. poll=true -> kèm 2-4 lựa chọn để bình chọn
+async function hostTopic({ poll, tableName, recent }) {
+  const want = poll
+    ? 'Nghĩ MỘT câu hỏi bình chọn vui, gây tranh luận nhẹ nhàng, gần gũi đời sống người Việt đi làm/đi học (ví dụ: "Sếp nhắn lúc 11h đêm: trả lời ngay hay để sáng mai?"). options: 2–4 lựa chọn ngắn (dưới 8 chữ), có một lựa chọn hài hước.'
+    : 'Nghĩ MỘT câu hỏi mở, khơi chuyện để mọi người kể trải nghiệm của mình. options để mảng rỗng.';
+  const where = tableName ? `Câu hỏi dành cho bàn chủ đề "${tableName}".` : 'Câu hỏi cho cả quán.';
+  const text = await hostCreate(HOST_PROMPT,
+    `${want}\n${where}\nTránh lặp các chủ đề gần đây: ${recent || '(chưa có)'}\nquestion viết bằng giọng Cô Tư, tối đa 35 chữ.`,
+    { type: 'json_schema', schema: TOPIC_SCHEMA });
+  if (!text) return null;
+  const t = JSON.parse(text);
+  t.options = (t.options || []).slice(0, 4).map((o) => String(o).slice(0, 40)).filter(Boolean);
+  if (poll && t.options.length < 2) return null;
+  return t;
+}
+
+// Tổng kết bình chọn cho vui
+async function hostPollSummary(question, results) {
+  return hostCreate(HOST_PROMPT, `Bình chọn "${question}" vừa kết thúc. Kết quả: ${results}.\nCô Tư tổng kết hài hước trong 1–2 câu, rủ mọi người kể thêm:`);
+}
+
+// Bình luận đầu tiên cho bài tâm sự chưa ai hỏi han
+async function hostPostComment(content, tableName) {
+  return hostCreate(`${HOST_PROMPT}\nLần này cô viết BÌNH LUẬN dưới một bài tâm sự (không phải chat chung): 2–3 câu, tối đa 60 chữ, công nhận cảm xúc, nhẹ nhàng, hỏi một câu để người viết kể thêm hoặc rủ họ gọi ly ngồi chơi. Không khuyên dạy dài dòng.`,
+    `Bài tâm sự ở bàn "${tableName}":\n«${content.slice(0, 1500)}»\nBình luận của Cô Tư:`);
+}
+
+module.exports = { isEnabled, streamReply, classifyKindMessage, hostReply, hostTopic, hostPollSummary, hostPostComment, Anthropic };

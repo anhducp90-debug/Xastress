@@ -15,6 +15,7 @@ const CHEER_ICON = { dongvien: '💪', anui: '🤗' };
 export function createSocial(ctx) {
   const { $, html, api, toast } = ctx;
   const S = {
+    polls: new Map(), // id -> { counts, closed, mine }
     seated: false, tab: 'public', table: 'congviec', dmPeer: null, dmItems: [], convos: [], unread: 0,
     logs: new Map(), collapsed: matchMedia('(max-width: 720px)').matches,
   };
@@ -36,7 +37,7 @@ export function createSocial(ctx) {
     ctx.menu.openMenu();
   }
   function placeholder() {
-    if (S.tab === 'public') return 'Nói với cả quán… (Enter)';
+    if (S.tab === 'public') return 'Nói với cả quán… (gọi "Cô Tư ơi" để hỏi cô)';
     if (S.tab === 'table') return `Nói ở ${tableById[S.table].icon} bàn ${tableById[S.table].name}…`;
     return S.dmPeer ? `Nhắn riêng cho ${S.dmPeer.nickname}…` : 'Chọn một người để nhắn riêng';
   }
@@ -56,6 +57,8 @@ export function createSocial(ctx) {
       const conv = e.target.closest('[data-conv]');
       if (conv) return openThread({ uid: Number(conv.dataset.conv), nickname: conv.dataset.nick });
       if (e.target.closest('#dmBack')) { S.dmPeer = null; loadConvos(); }
+      const v = e.target.closest('[data-vote]');
+      if (v) return votePoll(v.dataset.pid, Number(v.dataset.vote));
     };
     $('#chatForm').onsubmit = (e) => { e.preventDefault(); send(); };
     $('#chatInput').onfocus = () => { if (!S.seated) { $('#chatInput').blur(); needOrder(); } };
@@ -76,8 +79,21 @@ export function createSocial(ctx) {
   // Ngồi vào bàn nào thì chat bàn đó
   function sitAt(id) { if (S.table !== id) joinTable(id); setTab('table'); }
 
+  function pollCard(m) {
+    const st = S.polls.get(m.poll.id) || { counts: m.poll.counts, closed: m.poll.closed, mine: null };
+    const total = st.counts.reduce((x, y) => x + y, 0);
+    return html`<div class="poll ${st.closed ? 'closed' : ''}">
+      ${m.poll.options.map((o, i) => html`<button type="button" class="popt ${st.mine === i ? 'on' : ''}" data-vote="${i}" data-pid="${m.poll.id}" ${st.closed ? ctx.raw('disabled') : ''}>
+        <span class="pbar" data-w="${total ? Math.round((st.counts[i] / total) * 100) : 0}"></span>
+        <span class="plabel">${o}</span><span class="pcount">${st.counts[i]}</span></button>`)}
+      <small>${st.closed ? `Đã chốt · ${total} phiếu` : `${total} phiếu · bấm để chọn`}</small>
+    </div>`;
+  }
   function line(m) {
     if (m.sys) return html`<div class="cm sys">${m.text}</div>`;
+    if (m.npc) {
+      return html`<div class="cm cm-npc"><b>🍵 Cô Tư</b> <span class="ai-tag">AI</span>: ${m.text} <time>${time(m.at)}</time>${m.poll ? pollCard(m) : ''}</div>`;
+    }
     const mine = ctx.getMe() && m.uid === ctx.getMe().id;
     return html`<div class="cm ${mine ? 'mine' : ''}"><b class="cm-nick" data-who data-uid="${m.uid}" data-sid="${m.sid || ''}" data-nick="${m.nickname}">${m.nickname}</b>: ${m.text} <time>${time(m.at)}</time></div>`;
   }
@@ -101,6 +117,7 @@ export function createSocial(ctx) {
     } else {
       const items = logOf(currentChannel());
       box.innerHTML = items.length ? items.map((m) => line(m).s).join('') : html`<div class="cm sys">${S.tab === 'public' ? 'Quán đang yên ắng. Chào mọi người một câu nhé ☕' : `Bàn ${tableById[S.table].name} chưa ai lên tiếng.`}</div>`.s;
+      for (const b of box.querySelectorAll('.pbar')) b.style.width = `${b.dataset.w}%`;
     }
     box.scrollTop = box.scrollHeight;
   }
@@ -131,6 +148,17 @@ export function createSocial(ctx) {
       });
     }
     input.value = '';
+  }
+
+  function votePoll(id, option) {
+    if (!S.seated) return needOrder();
+    sock().emit('poll:vote', { id, option }, (r) => {
+      if (r && r.needOrder) return needOrder(r.error);
+      if (!r || !r.ok) return toast((r && r.error) || 'Không bình chọn được.', true);
+      const st = S.polls.get(id) || {};
+      S.polls.set(id, { ...st, counts: r.counts, mine: r.mine });
+      render();
+    });
   }
 
   async function loadConvos() {
@@ -270,10 +298,20 @@ export function createSocial(ctx) {
       loadConvos();
     });
     s.on('seated', () => setSeated(true, true));
+    s.on('poll:update', ({ id, counts }) => { const st = S.polls.get(id) || {}; S.polls.set(id, { ...st, counts }); if (S.tab !== 'dm') render(); });
+    s.on('poll:close', ({ id, counts }) => { const st = S.polls.get(id) || {}; S.polls.set(id, { ...st, counts, closed: true }); if (S.tab !== 'dm') render(); });
+    s.on('npc:whisper', (m) => { toast(`🍵 Cô Tư: ${m.text}`); if (g().coTuSay) g().coTuSay(m.text); });
     s.on('need-order', (m) => needOrder(m));
-    s.on('chat:history', ({ channel, items }) => { S.logs.set(channel, items.slice()); if (currentChannel() === channel) render(); });
+    s.on('chat:history', ({ channel, items }) => {
+      for (const m of items) if (m.poll && !S.polls.has(m.poll.id)) S.polls.set(m.poll.id, { counts: m.poll.counts, closed: m.poll.closed, mine: null });
+      S.logs.set(channel, items.slice()); if (currentChannel() === channel) render(); });
     s.on('chat', (m) => {
+      if (m.poll) S.polls.set(m.poll.id, { counts: m.poll.counts, closed: m.poll.closed, mine: (S.polls.get(m.poll.id) || {}).mine ?? null });
       push(m.channel, m);
+      if (m.npc) {
+        if ((m.channel === 'public' || m.channel === `table:${S.table}`) && g().coTuSay) g().coTuSay(m.text.length > 110 ? `${m.text.slice(0, 107)}…` : m.text);
+        return;
+      }
       if (m.channel === 'public' || m.channel === `table:${S.table}`) g().say(m.sid, m.channel === 'public' ? m.text : `${tableById[S.table].icon} ${m.text}`);
     });
     s.on('dm', (m) => {

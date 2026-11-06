@@ -181,6 +181,7 @@ addColumn('users', 'xu', 'INTEGER NOT NULL DEFAULT 0');          // ví xu (mua 
 addColumn('users', 'last_daily', "TEXT NOT NULL DEFAULT ''");    // (cũ, không dùng nữa)
 addColumn('users', 'voucher_self', 'INTEGER NOT NULL DEFAULT 1'); // phiếu: 1 ly miễn phí cho mình
 addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // (cũ, không dùng nữa: ly tặng kèm khi gọi thay thế)
+addColumn('users', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');       // tài khoản hệ thống (Cô Tư AI)
 addColumn('users', 'visit_start', 'INTEGER NOT NULL DEFAULT 0'); // lúc bắt đầu lượt vào quán hiện tại
 addColumn('users', 'last_seen', 'INTEGER NOT NULL DEFAULT 0');   // lúc rời quán gần nhất
 addColumn('cups', 'glass', 'INTEGER NOT NULL DEFAULT 0');         // 1 = đang có "ly của mình" món này để uống

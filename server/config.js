@@ -30,6 +30,16 @@ module.exports = {
   // Mỗi lượt vào quán phải gọi 1 ly mới được chat/đăng bài/tặng nước (SEAT_GATE=0 để tắt)
   seatGate: env.SEAT_GATE !== '0',
   visitGapMinutes: parseInt(env.VISIT_GAP_MINUTES || '30', 10), // vắng quá lâu thì tính là lượt vào quán mới
+  // Cô Tư hoạt náo (HOST_ENABLED=0 để tắt). Lưu ý: khác với `host` (địa chỉ máy chủ lắng nghe) ở trên
+  cotu: {
+    enabled: env.HOST_ENABLED !== '0',
+    quietMinutes: Number(env.HOST_QUIET_MINUTES || 4),       // chat cả quán im lặng bao lâu thì khơi chuyện
+    gapMinutes: Number(env.HOST_GAP_MINUTES || 6),           // tối thiểu giữa hai lần khơi chuyện
+    tableQuietMinutes: Number(env.HOST_TABLE_QUIET_MINUTES || 12),
+    pollMinutes: Number(env.HOST_POLL_MINUTES || 5),         // thời gian mỗi bình chọn
+    postCommentDelaySec: Number(env.HOST_POST_DELAY_SEC || 120), // tâm sự chưa ai hỏi han sau bao lâu thì Cô Tư vào
+    nudgeSeconds: Number(env.HOST_NUDGE_SECONDS || 60),      // nhắc người chưa gọi ly
+  },
   telegram: {
     token: env.TELEGRAM_BOT_TOKEN || '',
     username: (env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, ''),
