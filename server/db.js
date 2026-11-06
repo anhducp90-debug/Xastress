@@ -129,6 +129,48 @@ CREATE TABLE IF NOT EXISTS direct_gifts (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dgifts_to ON direct_gifts(to_user, created_at DESC);
+-- Đơn nạp xu (chuyển khoản VietQR / Telegram Stars)
+CREATE TABLE IF NOT EXISTS payment_orders (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  code         TEXT NOT NULL UNIQUE,            -- mã đơn, cũng là nội dung chuyển khoản
+  user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  package      TEXT NOT NULL,
+  xu           INTEGER NOT NULL,
+  method       TEXT NOT NULL,                   -- 'bank' | 'stars'
+  amount       INTEGER NOT NULL,                -- VND (bank) hoặc số Stars
+  currency     TEXT NOT NULL,                   -- 'VND' | 'XTR'
+  status       TEXT NOT NULL DEFAULT 'pending', -- pending | paid | expired | cancelled | refunded
+  provider_ref TEXT UNIQUE,                     -- mã giao dịch ngân hàng / Telegram (chống cộng 2 lần)
+  paid_amount  INTEGER,
+  confirmed_by TEXT,                            -- 'sepay' | 'telegram' | 'admin:<tên>'
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  paid_at      INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_porders_user ON payment_orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_porders_status ON payment_orders(status, created_at DESC);
+-- Biến động số dư ngân hàng nhận qua webhook (để đối soát, kể cả giao dịch không khớp đơn nào)
+CREATE TABLE IF NOT EXISTS bank_tx (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider      TEXT NOT NULL,
+  provider_ref  TEXT NOT NULL UNIQUE,
+  amount        INTEGER NOT NULL,
+  content       TEXT NOT NULL,
+  order_id      INTEGER REFERENCES payment_orders(id) ON DELETE SET NULL,
+  note          TEXT NOT NULL DEFAULT '',
+  created_at    INTEGER NOT NULL
+);
+-- Sổ cái xu: mọi lần cộng/trừ xu đều ghi lại
+CREATE TABLE IF NOT EXISTS xu_ledger (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  delta        INTEGER NOT NULL,
+  balance      INTEGER NOT NULL,
+  reason       TEXT NOT NULL,
+  ref          TEXT NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_user ON xu_ledger(user_id, id DESC);
 -- Liên kết tài khoản quán với Telegram (để mua xu qua bot)
 CREATE TABLE IF NOT EXISTS tg_links (
   user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

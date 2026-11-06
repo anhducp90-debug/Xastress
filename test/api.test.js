@@ -442,8 +442,14 @@ test('trang quản trị: phân quyền, tổng quan, kinh tế, người dùng,
       const b = JSON.parse(body || '{}');
       const json = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
       const sse = (chunks) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); for (const c of chunks) res.write(`data: ${c}\n\n`); res.end(); };
+      if (req.method === 'GET' && req.url.startsWith('/v1/models')) {
+        return json({ data: [{ id: 'gpt-new-1', created: 3 }, { id: 'text-embedding-3', created: 2 }, { id: 'gpt-old', created: 1 }] });
+      }
+      if (req.method === 'GET' && req.url.startsWith('/v1beta/models')) {
+        return json({ models: [{ name: 'models/gemini-new-pro', displayName: 'Gemini New Pro', supportedGenerationMethods: ['generateContent'] }, { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] }] });
+      }
       if (req.url.startsWith('/v1/chat/completions')) {
-        seen.push({ p: 'openai', auth: req.headers.authorization, stream: !!b.stream, fmt: !!b.response_format });
+        seen.push({ p: 'openai', auth: req.headers.authorization, stream: !!b.stream, fmt: !!b.response_format, model: b.model });
         if (req.headers.authorization !== 'Bearer sk-test-1234') { res.writeHead(401); return res.end('{"error":"bad key"}'); }
         if (b.stream) return sse([JSON.stringify({ choices: [{ delta: { content: 'Cô nghe ' } }] }), JSON.stringify({ choices: [{ delta: { content: 'đây con (GPT).' } }] }), '[DONE]']);
         const content = b.response_format ? JSON.stringify({ verdict: 'ok', reason: 'Tử tế.' }) : 'Chào cả quán! (GPT)';
@@ -481,16 +487,27 @@ test('trang quản trị: phân quyền, tổng quan, kinh tế, người dùng,
     assert.ok(!JSON.stringify(require('../server/db').prepare("SELECT value FROM settings WHERE key = 'secrets'").get()).includes('sk-test-1234'), 'khoá được mã hoá trong CSDL');
     r = await admin('/admin/ai/test', {});
     assert.deepStrictEqual([r.data.ok, r.data.provider, r.data.text], [true, 'openai', 'Chào cả quán! (GPT)']);
+    // Danh sách model lấy trực tiếp từ nhà cung cấp, lọc bỏ model không phải chat
+    const lm = (await admin('/admin/ai/models?provider=openai')).data;
+    assert.deepStrictEqual(lm.live.map((m) => m.id), ['gpt-new-1', 'gpt-old']);
+    assert.ok((await admin('/admin/settings')).data.ai.recommended.anthropic.some((m) => m.id === 'claude-opus-5-5'));
+    // 2 model riêng: tâm sự & hoạt náo/kiểm duyệt
+    await admin('/admin/settings/ai', { models: { openai: { chat: 'gpt-chat-x', fast: 'gpt-fast-y' } } });
+    await admin('/admin/ai/test', {});
+    assert.strictEqual(seen.filter((x) => x.p === 'openai').pop().model, 'gpt-fast-y', 'việc ngắn dùng model hoạt náo');
+    assert.strictEqual((await admin('/admin/settings/ai', { models: { openai: { chat: 'bad model!' } } })).status, 400);
     // gói Cô Tư AI trả lời stream bằng GPT
     const o = (await user('/order', { drink: 'trada' })).data;
     const chat = await fetch(`${base}/api/ai/packs/${o.pack.id}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: user.cookie() }, body: JSON.stringify({ message: 'Con mệt quá cô ơi' }) });
     const sseText = await chat.text();
+    assert.strictEqual(seen.filter((x) => x.p === 'openai' && x.stream).pop().model, 'gpt-chat-x', 'tâm sự dùng model tâm sự');
     assert.match(sseText, /event: delta\ndata: "Cô nghe "/);
     assert.match(sseText, /event: done/);
     assert.ok(seen.some((x) => x.p === 'openai' && x.stream));
 
     // ---- Gemini qua Google API ----
     await admin('/admin/settings/ai', { provider: 'gemini', keys: { gemini: 'gm-test-5678' } });
+    assert.deepStrictEqual((await admin('/admin/ai/models?provider=gemini')).data.live.map((m) => m.id), ['gemini-new-pro']);
     r = await admin('/admin/ai/test', {});
     assert.deepStrictEqual([r.data.provider, r.data.text], ['gemini', 'Chào cả quán! (Gemini)']);
     const pid = (await admin('/posts', { tableId: 'congviec', content: 'Chủ quán cũng có lúc mệt mỏi chứ' })).data.post.id;
@@ -538,4 +555,88 @@ test('trang quản trị: phân quyền, tổng quan, kinh tế, người dùng,
     if (prevAI !== undefined) process.env.AI_ENABLED = prevAI;
     mock.close();
   }
+});
+
+test('nền tảng thanh toán: VietQR, webhook SePay, chuyển thiếu, trùng, xác nhận tay, hoàn tiền, gán giao dịch, sổ cái', async () => {
+  const vietqr = require('../server/vietqr');
+  assert.strictEqual(vietqr.crc16('123456789'), '29B1', 'CRC16-CCITT chuẩn EMVCo');
+  const pl = vietqr.payload({ bin: '970436', account: '0011001234567', amount: 50000, memo: 'XSABCDEFGH' });
+  assert.ok(pl.startsWith('000201010212') && pl.includes('0006970436') && pl.includes('540550000') && pl.includes('0810XSABCDEFGH'));
+
+  const admin = client(), u = client(), other = client();
+  await admin('/auth/login', { username: 'quanly', password: 'matkhau123' });
+  await u('/auth/register', { username: 'mua_xu', password: 'matkhau123', nickname: 'Người Mua' });
+  await other('/auth/register', { username: 'mua_xu_2', password: 'matkhau123' });
+  assert.strictEqual((await u('/admin/pay/summary')).status, 403);
+
+  // Chưa cấu hình ngân hàng / đang miễn phí
+  let r = await u('/pay/orders', { package: 'vua' });
+  assert.strictEqual(r.status, 400, 'đang miễn phí thì chưa cần nạp');
+  r = await admin('/admin/pay/settings', { bank: { bin: '970436', account: '0011001234567', name: 'Nguyen Van A' }, sepayKey: 'sepay-secret-123', allowBeforePaywall: true, expiryMinutes: 30 });
+  assert.match(r.data.preview, /^data:image\/png;base64,/);
+  const ps = (await admin('/admin/pay/settings')).data;
+  assert.deepStrictEqual([ps.bank.name, ps.sepayKey], ['NGUYEN VAN A', '••••-123']);
+
+  // Tạo đơn chuyển khoản
+  const info = (await u('/pay/info')).data;
+  assert.deepStrictEqual([info.canBuy, info.methods.bank], [true, true]);
+  const vua = info.packages.find((p) => p.id === 'vua');
+  r = await u('/pay/orders', { package: 'vua' });
+  const o1 = r.data.order;
+  assert.match(o1.code, /^XS[A-HJ-NP-Z2-9]{8}$/);
+  assert.deepStrictEqual([o1.amount, o1.xu, o1.status, o1.bank.name], [vua.vnd, vua.xu, 'pending', 'Vietcombank']);
+  assert.match(o1.qr, /^data:image\/png/);
+  assert.strictEqual((await u('/pay/orders', { package: 'vua' })).data.order.id, o1.id, 'gói giống nhau -> dùng lại đơn đang chờ');
+
+  const hook = (key, body) => fetch(`${base}/api/pay/webhook/sepay`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Apikey ${key}` }, body: JSON.stringify(body) });
+  assert.strictEqual((await hook('sai', { id: 1, transferType: 'in', transferAmount: vua.vnd, content: o1.code })).status, 401);
+  // Chuyển thiếu -> không cộng xu, ghi nhận để đối soát
+  let h = await (await hook('sepay-secret-123', { id: 101, transferType: 'in', transferAmount: 1000, content: o1.code })).json();
+  assert.strictEqual(h.matched, false);
+  // Đủ tiền, nội dung bị ngân hàng chèn dấu cách / viết thường
+  const messy = `MBVCB.3278907 ${o1.code.slice(0, 4).toLowerCase()} ${o1.code.slice(4)} chuyen tien`;
+  h = await (await hook('sepay-secret-123', { id: 102, transferType: 'in', transferAmount: vua.vnd, content: messy })).json();
+  assert.strictEqual(h.matched, true);
+  assert.strictEqual((await u(`/pay/orders/${o1.id}`)).data.order.status, 'paid');
+  assert.strictEqual((await u('/wallet')).data.xu, vua.xu);
+  h = await (await hook('sepay-secret-123', { id: 102, transferType: 'in', transferAmount: vua.vnd, content: messy })).json();
+  assert.ok(h.duplicate, 'SePay gửi lại -> không cộng 2 lần');
+  assert.strictEqual((await u('/wallet')).data.xu, vua.xu);
+
+  // Xác nhận tay
+  const nho = info.packages.find((p) => p.id === 'nho');
+  const o2 = (await u('/pay/orders', { package: 'nho' })).data.order;
+  assert.ok((await admin(`/admin/pay/orders/${o2.id}/confirm`, {})).data.order.status === 'paid');
+  assert.strictEqual((await admin(`/admin/pay/orders/${o2.id}/confirm`, {})).status, 400, 'không xác nhận 2 lần');
+  assert.strictEqual((await u('/wallet')).data.xu, vua.xu + nho.xu);
+
+  // Hoàn tiền: thu hồi xu
+  await admin(`/admin/pay/orders/${o1.id}/refund`, {});
+  assert.strictEqual((await u('/wallet')).data.xu, nho.xu);
+
+  // Giao dịch ghi sai nội dung -> admin gán vào đơn
+  const o3 = (await other('/pay/orders', { package: 'nho' })).data.order;
+  h = await (await hook('sepay-secret-123', { id: 103, transferType: 'in', transferAmount: nho.vnd, content: 'ck mua xu cho ban' })).json();
+  assert.strictEqual(h.matched, false);
+  const tx = (await admin('/admin/pay/bank-tx')).data.items.find((t) => t.provider_ref === 'sepay:103');
+  assert.ok((await admin(`/admin/pay/bank-tx/${tx.id}/assign`, { orderId: o3.id })).data.order.status === 'paid');
+  assert.strictEqual((await other('/wallet')).data.xu, nho.xu);
+
+  // Huỷ đơn chờ của mình
+  const o4 = (await other('/pay/orders', { package: 'to' })).data.order;
+  assert.strictEqual((await other(`/pay/orders/${o4.id}/cancel`, {})).data.order.status, 'cancelled');
+  assert.strictEqual((await u(`/pay/orders/${o4.id}/cancel`, {})).status, 404, 'không huỷ đơn người khác');
+
+  // Sổ cái & báo cáo
+  const ledger = (await u('/me/ledger')).data.items;
+  assert.deepStrictEqual(ledger.map((x) => x.delta), [-vua.xu, nho.xu, vua.xu]);
+  assert.ok(ledger[0].reason.includes('Hoàn tiền'));
+  const sm = (await admin('/admin/pay/summary')).data;
+  assert.strictEqual(sm.vndTotal, 2 * nho.vnd, 'đơn đã hoàn không tính doanh thu');
+  assert.ok(sm.unmatched >= 2 && sm.refunded === 1);
+  // Admin chỉnh gói xu
+  r = await admin('/admin/pay/settings', { packages: [{ id: 'nho', label: '25 xu', xu: 25, vnd: 20000, stars: 15 }, { id: 'to', label: '200 xu', xu: 200, vnd: 120000, stars: 100 }] });
+  assert.ok(r.data.ok);
+  assert.deepStrictEqual((await u('/pay/info')).data.packages.map((p) => p.xu), [25, 200]);
+  assert.strictEqual((await admin('/admin/pay/settings', { packages: [{ id: 'x', xu: 10, vnd: 10 }] })).status, 400);
 });

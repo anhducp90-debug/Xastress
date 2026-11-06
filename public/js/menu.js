@@ -94,29 +94,146 @@ export function createMenu(ctx) {
       ${e.paywall
         ? html`<div class="wallet"><span>👛 <b id="xuNow">${w.xu}</b> xu</span>
             <span>🎟️ Phiếu gọi ly miễn phí: ${w.vouchers.self}</span>
-            ${w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : ''}</div>`
+            ${topupBtn(w)}</div>`
         : html`<div class="wallet free"><span>🎉 Quán đang <b>miễn phí</b> · gọi 1 ly được <b>tặng kèm 1 ly</b> để mời người khác</span>
             <span class="tag">${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí</span></div>`}
       ${hasTray ? html`<div class="tray">🎁 Ly để tặng: ${trayChips(w.tray)}</div>` : ''}
       ${w.glasses.length ? html`<div class="tray">🥤 Ly của bạn (uống miễn phí): ${w.glasses.map((k) => html`<span class="tchip">${drinkById[k] ? drinkById[k].icon : '🍵'}</span>`)}</div>` : ''}
     </div>`;
   }
-  // Mở bot Telegram để mua xu (mã liên kết dùng một lần)
+  // ---------- Nạp xu: chuyển khoản VietQR hoặc Telegram Stars ----------
+  const vnd = (n) => `${Number(n || 0).toLocaleString('vi-VN')}đ`;
+  const canTopup = (w) => w.pay && w.pay.canBuy && (w.pay.bank || (w.telegram && w.telegram.enabled));
+  const topupBtn = (w) => (canTopup(w) ? html`<button type="button" class="btn small green" data-topup>🪙 Nạp xu</button>` : '');
+  // Mở bot Telegram để mua xu bằng Stars (mã liên kết dùng một lần)
   async function buyXu(btn) {
     btn.disabled = true;
     try {
       const r = await api('/telegram/link', { body: {} });
       const a = document.createElement('a');
       a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'btn small green';
-      a.textContent = '➡️ Mở bot Telegram để mua xu';
+      a.textContent = '➡️ Mở bot Telegram';
       btn.replaceWith(a);
       window.open(r.url, '_blank', 'noopener');
-      toast('Mở bot Telegram, chọn gói xu và thanh toán bằng ⭐ Stars. Xu sẽ tự vào ví 👛');
+      toast('Trong bot Telegram, chọn gói xu và thanh toán bằng ⭐ Stars. Xu sẽ tự vào ví 👛');
     } catch (err) { toast(err.message, true); btn.disabled = false; }
   }
-  document.addEventListener('click', (e) => { const b = e.target.closest('[data-buyxu]'); if (b) { e.preventDefault(); buyXu(b); } });
+  let afterTopup = null; // quay lại màn hình trước (ví dụ thực đơn)
+  async function openTopup(back) {
+    if (back !== undefined) afterTopup = back;
+    ctx.clearTimer();
+    let info;
+    try { info = await api('/pay/info'); } catch (err) { toast(err.message, true); return; }
+    if (!info.canBuy) { toast('🎉 Quán đang miễn phí, bạn chưa cần nạp xu đâu!'); return; }
+    const { bank, stars } = info.methods;
+    openModal(html`<div class="topup">
+      <h2>🪙 Nạp xu vào ví</h2>
+      <p class="topup-bal">👛 Ví đang có <b>${info.xu}</b> xu</p>
+      ${!bank && !stars ? html`<p class="tag">Quán chưa mở bán xu, quay lại sau nhé.</p>` : ''}
+      <div class="pkg-grid">${info.packages.map((p) => html`<div class="pkg">
+        <div class="pkg-name">${p.label}</div><div class="pkg-xu">🪙 ${p.xu} xu</div>
+        ${bank ? html`<button type="button" class="btn small warm" data-paybank="${p.id}">🏦 Chuyển khoản ${vnd(p.vnd)}</button>` : ''}
+        ${stars && p.stars ? html`<button type="button" class="btn small" data-paystars>⭐ ${p.stars} Stars (Telegram)</button>` : ''}
+      </div>`)}</div>
+      ${info.pending.length ? html`<div class="topup-pending"><b>Đơn đang chờ thanh toán:</b>
+        ${info.pending.map((o) => html`<button type="button" class="btn small" data-payshow="${o.id}">${o.code} · ${vnd(o.amount)}</button>`)}</div>` : ''}
+      <p class="tag">Chuyển khoản qua app ngân hàng bất kỳ bằng mã VietQR – xu tự vào ví sau khi quán nhận được tiền. Xu chỉ dùng trong quán, không đổi lại thành tiền.</p>
+      <details class="ledger"><summary>📜 Lịch sử xu của bạn</summary><div id="ledgerList" class="tag">Đang tải…</div></details>
+      ${afterTopup ? html`<button type="button" class="btn small" data-topback>← Quay lại</button>` : ''}
+    </div>`);
+    const body = $('#modalBody');
+    const det = body.querySelector('details.ledger');
+    det.ontoggle = async () => {
+      if (!det.open) return;
+      const el = $('#ledgerList');
+      try {
+        const { items } = await api('/me/ledger');
+        el.innerHTML = items.length ? html`${items.map((l) => html`<div class="lrow"><span>${new Date(l.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+          <span>${l.reason}</span><b class="${l.delta > 0 ? 'plus' : 'minus'}">${l.delta > 0 ? '+' : ''}${l.delta}</b></div>`)}`.s : 'Chưa có giao dịch xu nào.';
+      } catch (err) { el.textContent = err.message; }
+    };
+    body.onclick = async (e) => {
+      const b = e.target.closest('[data-paybank]'), s = e.target.closest('[data-paystars]'), v = e.target.closest('[data-payshow]');
+      if (e.target.closest('[data-topback]')) { const fn = afterTopup; afterTopup = null; fn(); return; }
+      if (s) return buyXu(s);
+      if (v) return showOrder(Number(v.dataset.payshow));
+      if (b) {
+        b.disabled = true;
+        try { const { order } = await api('/pay/orders', { body: { package: b.dataset.paybank } }); showOrder(order.id, order); }
+        catch (err) { toast(err.message, true); b.disabled = false; }
+      }
+    };
+  }
+  async function showOrder(id, o) {
+    try { if (!o) o = (await api(`/pay/orders/${id}?qr=1`)).order; } catch (err) { toast(err.message, true); return; }
+    const copy = (label, val) => html`<div class="crow"><span>${label}</span><b>${val}</b><button type="button" class="btn small" data-copy="${val}">Chép</button></div>`;
+    openModal(html`<div class="topup">
+      <h2>🏦 Chuyển khoản ${vnd(o.amount)}</h2>
+      <div class="pay-box">
+        ${o.qr ? html`<img class="pay-qr" src="${o.qr}" alt="Mã VietQR">` : ''}
+        <div class="pay-info">
+          <p class="tag">Mở app ngân hàng → Quét mã QR. Số tiền và nội dung đã điền sẵn – <b>giữ nguyên nội dung</b> để xu tự vào ví.</p>
+          ${copy('Ngân hàng', o.bank ? o.bank.name : '')}
+          ${copy('Số tài khoản', o.bank ? o.bank.account : '')}
+          ${copy('Chủ tài khoản', o.bank ? o.bank.holder : '')}
+          ${copy('Số tiền', String(o.amount))}
+          ${copy('Nội dung', o.code)}
+        </div>
+      </div>
+      <div class="pay-status" id="payStatus"></div>
+      <div class="row-c"><button type="button" class="btn small" data-topup-list>← Chọn gói khác</button>
+        <button type="button" class="btn small" data-paycancel>Huỷ đơn</button></div>
+    </div>`);
+    const body = $('#modalBody');
+    const st = $('#payStatus');
+    const render = (x) => {
+      if (!st.isConnected) return false;
+      if (x.status === 'paid') {
+        ctx.clearTimer();
+        st.className = 'pay-status ok';
+        st.innerHTML = html`🎉 Đã nhận tiền! <b>+${x.xu} xu</b> đã vào ví. Cảm ơn bạn ủng hộ quán ☕`.s;
+        const pc = body.querySelector('[data-paycancel]'); if (pc) pc.remove();
+        return false;
+      }
+      if (x.status !== 'pending') {
+        ctx.clearTimer();
+        st.className = 'pay-status off';
+        st.textContent = { expired: '⌛ Đơn đã hết hạn. Nếu bạn đã chuyển khoản, quán sẽ kiểm tra và cộng xu – hoặc liên hệ hỗ trợ kèm mã đơn.', cancelled: 'Đơn đã huỷ.', refunded: 'Đơn đã hoàn tiền.' }[x.status] || x.status;
+        return false;
+      }
+      const left = Math.max(0, x.expiresAt - Date.now());
+      st.className = 'pay-status';
+      st.textContent = `⏳ Đang chờ tiền về… (đơn còn hiệu lực ${Math.floor(left / 60e3)}:${String(Math.floor((left % 60e3) / 1000)).padStart(2, '0')})`;
+      return true;
+    };
+    let cur = o, tick = 0;
+    render(cur);
+    if (cur.status === 'pending') {
+      ctx.setTimer(setInterval(async () => {
+        if (!render(cur)) return;
+        if (++tick % 4) return; // hỏi máy chủ mỗi 4 giây
+        try { cur = { ...cur, ...(await api(`/pay/orders/${o.id}`)).order }; render(cur); } catch { /* thử lại lần sau */ }
+      }, 1000));
+    }
+    onXu = (n) => { if (n.orderId === o.id) { cur = { ...cur, status: 'paid' }; render(cur); } };
+    body.onclick = async (e) => {
+      const c = e.target.closest('[data-copy]');
+      if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); toast(`Đã chép: ${c.dataset.copy}`); } catch { toast('Không chép được, bạn gõ tay giúp nhé', true); } return; }
+      if (e.target.closest('[data-topup-list]')) return openTopup();
+      if (e.target.closest('[data-paycancel]')) {
+        if (!confirm('Huỷ đơn này? Nếu bạn ĐÃ chuyển khoản thì đừng huỷ nhé.')) return;
+        try { await api(`/pay/orders/${o.id}/cancel`, { body: {} }); toast('Đã huỷ đơn'); openTopup(); } catch (err) { toast(err.message, true); }
+      }
+    };
+  }
+  let onXu = null;
+  window.addEventListener('xs:xu', (e) => { if (onXu) onXu(e.detail); });
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-topup]');
+    if (t) { e.preventDefault(); openTopup(t.closest('.menu-board') ? () => openMenu() : null); }
+  });
   const needXuHtml = (w, need) => html`<div class="need-xu">Cần ${need} xu, ví đang có ${w.xu} xu.
-    ${w.telegram && w.telegram.enabled ? html`<button type="button" class="btn small green" data-buyxu>🪙 Mua xu qua Telegram</button>` : html`<span class="tag">Quán chưa mở bán xu.</span>`}</div>`;
+    ${canTopup(w) ? topupBtn(w) : html`<span class="tag">Quán chưa mở bán xu.</span>`}</div>`;
   const quote = (drink) => api(`/wallet/quote?drink=${drink}`);
 
   async function openMenu(mood) {
@@ -581,7 +698,7 @@ export function createMenu(ctx) {
     },
   };
 
-  return { openMenu, order, mountTreat };
+  return { openMenu, order, mountTreat, openTopup };
 }
 
 const KIND_LINES = ['Mình hiểu mà, bạn không một mình đâu 💛', 'Bạn đã cố gắng nhiều lắm rồi', 'Uống ly nước cho mát rồi tính tiếp nha', 'Mai trời lại sáng, cố lên!'];

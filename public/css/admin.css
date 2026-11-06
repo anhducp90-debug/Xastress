@@ -65,3 +65,15 @@ td.content { max-width: 420px; white-space: pre-wrap; word-wrap: break-word; }
   .side button { white-space: nowrap; }
   main { padding: 14px; }
 }
+.subnav { margin: 16px 0 10px; }
+.spark { display: flex; align-items: flex-end; gap: 4px; height: 90px; margin-top: 8px; }
+.spark > div { flex: 1; max-width: 48px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
+.spark i { display: block; width: 100%; background: var(--gold); border-radius: 4px 4px 0 0; }
+img.qr { width: 160px; height: 160px; background: #fff; border-radius: 8px; padding: 6px; }
+#pkT input { width: 100%; min-width: 70px; }
+ol.muted { padding-left: 20px; margin: 6px 0; }
+.mrow { display: grid; grid-template-columns: 150px repeat(3, minmax(0, 1fr)); gap: 4px 10px; align-items: end; }
+.mrow > b { align-self: center; }
+.mrow select, .mrow input { width: 100%; }
+.mrow .mbtn { grid-column: 2 / -1; }
+@media (max-width: 900px) { .mrow { grid-template-columns: 1fr; } .mrow .mbtn { grid-column: auto; } }

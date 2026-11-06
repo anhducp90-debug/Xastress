@@ -32,7 +32,7 @@ function setTimer(fn, ms) { clearInterval(timer); timer = fn ? setInterval(fn, m
 
 // ================= Tổng quan =================
 async function overview() {
-  const o = await api('/admin/overview');
+  const [o, ps] = await Promise.all([api('/admin/overview'), api('/admin/pay/summary').catch(() => null)]);
   const e = o.economy;
   const pct = Math.round((e.participants / e.threshold) * 100);
   const ai = o.ai;
@@ -45,7 +45,8 @@ async function overview() {
     <div class="grid">
       ${[['🟢 Đang trong quán', o.online], ['👥 Khách', o.users], ['🆕 Khách mới hôm nay', o.newUsersToday], ['📝 Tâm sự hôm nay', `${o.postsToday} / ${o.postsTotal}`],
         ['💬 Bình luận hôm nay', o.commentsToday], ['🧋 Ly gọi hôm nay', o.ordersToday], ['🎁 Ly tặng hôm nay', o.cupsGiftedToday], ['✉️ Tin riêng hôm nay', o.dmsToday],
-        ['🚩 Báo cáo chờ xử lý', o.openReports], ['⭐ Đã bán', `${fmt(o.payments.stars)}⭐ · ${fmt(o.payments.xu)} xu`]]
+        ['🚩 Báo cáo chờ xử lý', o.openReports],
+        ...(ps ? [['💵 Doanh thu hôm nay', `${fmt(ps.vndToday)}đ`], ['🧾 Đơn chờ thanh toán', ps.pending], ['⭐ Stars đã bán', `${fmt(ps.starsTotal)}⭐`], ['🪙 Xu đã bán', ps.xuSold]] : [])]
         .map(([k, v]) => `<div class="tile"><div class="v">${esc(typeof v === 'number' ? fmt(v) : v)}</div><div class="k">${k}</div></div>`).join('')}
     </div>
     <div class="card">
@@ -56,7 +57,7 @@ async function overview() {
     </div>
     <div class="card">
       <b>🤖 AI của Cô Tư:</b> ${ai.provider === 'none' ? '<span class="pill off">Tắt</span>' : '<span class="pill ok">Đang chạy</span>'} ${esc(PROV[ai.provider])}
-      ${ai.provider !== 'none' ? `<span class="muted">· model <code>${esc(ai.model)}</code></span>` : ''}
+      ${ai.provider !== 'none' ? `<span class="muted">· tâm sự: <code>${esc(ai.model)}</code> · hoạt náo &amp; kiểm duyệt: <code>${esc(ai.fastModel)}</code></span>` : ''}
       ${ai.chosen !== ai.provider ? `<div class="note red">Đã chọn ${esc(PROV[ai.chosen])} nhưng chưa có khoá API hợp lệ → Cô Tư đang dùng câu soạn sẵn.</div>` : ''}
       <div class="muted">Hôm nay: ${fmt(calls)} lượt gọi AI, ${fmt(errs)} lỗi.</div>
       <div><b>🎙️ Cô Tư hoạt náo:</b> ${o.cotu.enabled ? '<span class="pill ok">Bật</span>' : '<span class="pill off">Tắt</span>'}</div>
@@ -88,19 +89,56 @@ async function aiTab() {
     <h2>Khoá API & model</h2>
     <div class="card">
       ${['anthropic', 'openai', 'gemini'].map((k) => `
-        <div class="row">
+        <div class="mrow">
           <b>${esc(PROV_INFO[k].name)}</b>
           <label class="f">Khoá API <input type="password" autocomplete="off" data-key="${k}" placeholder="${esc(s.keys[k] || 'chưa có')}"></label>
-          <label class="f">Model <input data-model="${k}" value="${esc(s.models[k])}"></label>
+          <label class="f">Model tâm sự <select data-model="${k}" data-role="chat"></select></label>
+          <label class="f">Model hoạt náo &amp; kiểm duyệt <select data-model="${k}" data-role="fast"></select></label>
+          <div class="row mbtn"><button class="btn" data-live="${k}" title="Hỏi nhà cung cấp danh sách model mới nhất (cần khoá API)">↻ Tải model mới nhất</button>
           ${s.keys[k] && s.keys[k] !== '(.env)' ? `<button class="btn danger" data-delkey="${k}">Xoá khoá</button>` : ''}
+          <span class="muted" data-liveout="${k}"></span></div>
         </div>`).join('<hr>')}
-      <p class="muted">Để trống ô khoá = giữ nguyên khoá đã lưu. Khoá được mã hoá khi lưu và không bao giờ hiển thị lại đầy đủ. Tên model có thể thay đổi theo thời gian – kiểm tra trang tài liệu của nhà cung cấp.</p>
+      <p class="muted">Để trống ô khoá = giữ nguyên khoá đã lưu. Khoá được mã hoá khi lưu và không bao giờ hiển thị lại đầy đủ. Model tâm sự trả lời khách khi gọi ly; model hoạt náo &amp; kiểm duyệt chạy thường xuyên (chào khách, khơi chuyện, lọc lời nhắn) nên chọn loại nhanh, rẻ. Bấm “Tải model mới nhất” để lấy danh sách model mới nhất từ nhà cung cấp; chọn “✏️ Nhập tên khác…” nếu muốn gõ tên model.</p>
       <label class="f">Mức suy nghĩ (chỉ áp dụng cho Claude khi tâm sự)
         <select id="effort">${['low', 'medium', 'high'].map((x) => `<option ${s.effort === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <div class="row"><button class="btn primary" id="saveAi">💾 Lưu</button><button class="btn green" id="testAi">⚡ Thử gọi AI</button><span id="testOut" class="muted"></span></div>
     </div>`;
   // khắc phục: style inline bị CSP chặn -> đặt độ rộng nhãn bằng JS
   for (const b of main.querySelectorAll('.row > b')) b.style.minWidth = '150px';
+  const CUSTOM = '__custom__';
+  const live = {};
+  function fillModels(k) {
+    for (const sel of main.querySelectorAll(`[data-model="${k}"]`)) {
+      const cur = sel.dataset.cur || s.models[k][sel.dataset.role];
+      const opts = [...(s.recommended[k] || [])];
+      for (const m of live[k] || []) if (!opts.some((o) => o.id === m.id)) opts.push({ id: m.id, label: m.label && m.label !== m.id ? `${m.id} – ${m.label}` : m.id, live: true });
+      if (cur && !opts.some((o) => o.id === cur)) opts.unshift({ id: cur, label: `${cur} (đang dùng)` });
+      const html = (arr) => arr.map((o) => `<option value="${esc(o.id)}" ${o.id === cur ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+      const liv = opts.filter((o) => o.live);
+      sel.innerHTML = `<optgroup label="Gợi ý">${html(opts.filter((o) => !o.live))}</optgroup>${liv.length ? `<optgroup label="Mới nhất từ nhà cung cấp">${html(liv)}</optgroup>` : ''}<option value="${CUSTOM}">✏️ Nhập tên khác…</option>`;
+      sel.dataset.cur = cur;
+      sel.onchange = () => {
+        if (sel.value === CUSTOM) {
+          const v = (prompt('Tên model (ví dụ claude-opus-5-5, gpt-5-mini, gemini-2.5-flash):', sel.dataset.cur) || '').trim();
+          if (v && /^[\w.:\-/]{2,80}$/.test(v)) sel.dataset.cur = v; else if (v) toast('Tên model không hợp lệ', true);
+          fillModels(k); return;
+        }
+        sel.dataset.cur = sel.value;
+      };
+    }
+  }
+  ['anthropic', 'openai', 'gemini'].forEach(fillModels);
+  main.querySelectorAll('[data-live]').forEach((b) => { b.onclick = async () => {
+    const k = b.dataset.live, out = main.querySelector(`[data-liveout="${k}"]`);
+    b.disabled = true; out.textContent = 'Đang tải…';
+    try {
+      const r = await api(`/admin/ai/models?provider=${k}`);
+      live[k] = r.live || [];
+      out.textContent = r.error ? `✗ ${r.error}` : `✓ ${live[k].length} model`;
+      fillModels(k);
+    } catch (err) { out.textContent = `✗ ${err.message}`; }
+    b.disabled = false;
+  }; });
   main.querySelectorAll('.opt').forEach((o) => { o.onclick = () => { main.querySelectorAll('.opt').forEach((x) => x.classList.toggle('on', x === o)); }; });
   main.querySelectorAll('[data-delkey]').forEach((b) => { b.onclick = async () => {
     if (!confirm('Xoá khoá API này?')) return;
@@ -109,7 +147,7 @@ async function aiTab() {
   $('#saveAi').onclick = async () => {
     const keys = {}, models = {};
     main.querySelectorAll('[data-key]').forEach((i) => { if (i.value.trim()) keys[i.dataset.key] = i.value.trim(); });
-    main.querySelectorAll('[data-model]').forEach((i) => { models[i.dataset.model] = i.value.trim(); });
+    main.querySelectorAll('[data-model]').forEach((i) => { (models[i.dataset.model] ||= {})[i.dataset.role] = i.dataset.cur; });
     const provider = (main.querySelector('input[name=prov]:checked') || {}).value;
     try {
       const r = await api('/admin/settings/ai', { body: { provider, keys, models, effort: $('#effort').value } });
@@ -119,7 +157,7 @@ async function aiTab() {
   };
   $('#testAi').onclick = async () => {
     $('#testOut').textContent = 'Đang gọi…';
-    try { const r = await api('/admin/ai/test', { body: {} }); $('#testOut').textContent = `✓ ${r.provider} / ${r.model} (${r.ms} ms): “${r.text}”`; }
+    try { const r = await api('/admin/ai/test', { body: {} }); $('#testOut').textContent = `✓ ${r.provider} / ${r.model} (${r.ms} ms): “${r.text}”${r.chatModel !== r.model ? ` · tâm sự dùng ${r.chatModel}` : ''}`; }
     catch (err) { $('#testOut').textContent = `✗ ${err.message}`; }
   };
 }
@@ -202,10 +240,11 @@ async function economyTab() {
       <div class="grid">${Object.entries(s.prices).map(([k, v]) => `<label class="f">${DRINK_ICON[k] || ''} ${esc(s.drinks[k])}<input type="number" min="0" data-price="${k}" value="${v}"></label>`).join('')}</div>
       <button class="btn primary" id="saveEco">💾 Lưu</button>
     </div>
-    <h2>Gói xu bán qua bot Telegram</h2>
-    <table><tr><th>Gói</th><th>Xu</th><th>Giá (Telegram Stars)</th></tr>
-      ${s.packages.map((p) => `<tr><td>${esc(p.label)}</td><td>${fmt(p.xu)}</td><td>${fmt(p.stars)} ⭐</td></tr>`).join('')}</table>
-    <p class="muted">Đổi gói xu trong <code>server/constants.js</code> (XU_PACKAGES) rồi khởi động lại dịch vụ.</p>`;
+    <h2>Gói xu đang bán</h2>
+    <table><tr><th>Gói</th><th>Xu</th><th>Chuyển khoản</th><th>Telegram Stars</th></tr>
+      ${s.packages.map((p) => `<tr><td>${esc(p.label)}</td><td>${fmt(p.xu)}</td><td>${fmt(p.vnd)}đ</td><td>${p.stars ? `${fmt(p.stars)} ⭐` : '—'}</td></tr>`).join('')}</table>
+    <p class="muted">Sửa gói xu, tài khoản ngân hàng nhận tiền ở mục <a href="#payments" data-goto="payments">💳 Thanh toán</a>.</p>`;
+  const gl = main.querySelector('[data-goto]'); if (gl) gl.onclick = (ev) => { ev.preventDefault(); go('payments'); };
   setBars(main);
   $('#saveEco').onclick = async () => {
     const prices = {};
@@ -291,15 +330,155 @@ async function postsTab() {
 }
 
 // ================= Thanh toán =================
+const ST = { pending: ['Chờ thanh toán', 'warn'], paid: ['Đã thanh toán', 'ok'], expired: ['Hết hạn', 'off'], cancelled: ['Đã huỷ', 'off'], refunded: ['Đã hoàn', ''] };
+const stPill = (st) => `<span class="pill ${ST[st] ? ST[st][1] : ''}">${esc(ST[st] ? ST[st][0] : st)}</span>`;
+const money = (o) => (o.currency === 'XTR' ? `${fmt(o.amount)} ⭐` : `${fmt(o.amount)}đ`);
+let paySub = 'orders';
 async function paymentsTab() {
-  const { items } = await api('/admin/payments');
+  const s = await api('/admin/pay/summary');
+  const max = Math.max(1, ...s.daily.map((d) => d.vnd));
   main.innerHTML = `
-    <h1>⭐ Thanh toán qua Telegram</h1>
+    <h1>💳 Thanh toán</h1>
+    <div class="grid">
+      ${[['💵 Hôm nay', `${fmt(s.vndToday)}đ`], ['📅 7 ngày', `${fmt(s.vnd7d)}đ`], ['🏦 Tổng chuyển khoản', `${fmt(s.vndTotal)}đ`], ['⭐ Tổng Stars', `${fmt(s.starsTotal)}⭐`],
+        ['🪙 Xu đã bán', fmt(s.xuSold)], ['🧾 Đơn chờ', fmt(s.pending)], ['❓ Giao dịch cần xem', fmt(s.unmatched)], ['↩️ Đã hoàn', fmt(s.refunded)]]
+        .map(([k, v]) => `<div class="tile"><div class="v">${esc(v)}</div><div class="k">${k}</div></div>`).join('')}
+    </div>
+    ${s.daily.length ? `<div class="card"><b>Doanh thu chuyển khoản 14 ngày</b>
+      <div class="spark">${s.daily.map((d) => `<div title="${esc(d.d)}: ${fmt(d.vnd)}đ · ${fmt(d.stars)}⭐ · ${d.n} đơn"><i data-h="${Math.round((d.vnd / max) * 100)}"></i><span>${esc(d.d.slice(8))}</span></div>`).join('')}</div></div>` : ''}
+    <div class="subnav row">
+      ${[['orders', '🧾 Đơn nạp xu'], ['banktx', `🏦 Giao dịch ngân hàng${s.unmatched ? ` (${s.unmatched})` : ''}`], ['stars', '⭐ Telegram Stars'], ['settings', '⚙️ Cài đặt thanh toán']]
+        .map(([k, l]) => `<button class="btn ${paySub === k ? 'primary' : ''}" data-sub="${k}">${l}</button>`).join('')}
+    </div>
+    <div id="paySub"></div>`;
+  for (const i of main.querySelectorAll('.spark i')) i.style.height = `${Math.max(2, Number(i.dataset.h))}%`;
+  main.querySelectorAll('[data-sub]').forEach((b) => { b.onclick = () => { paySub = b.dataset.sub; paymentsTab(); }; });
+  await ({ orders: payOrders, banktx: payBankTx, stars: payStars, settings: paySettings })[paySub]();
+}
+
+async function payOrders(status = '', q = '') {
+  const el = $('#paySub');
+  const { items } = await api(`/admin/pay/orders?status=${status}&q=${encodeURIComponent(q)}`);
+  el.innerHTML = `
+    <div class="row">
+      <select id="poSt"><option value="">Mọi trạng thái</option>${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${status === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
+      <input id="poQ" placeholder="Mã đơn (XS…)" value="${esc(q)}"><button class="btn" id="poGo">🔍 Lọc</button>
+    </div>
+    ${items.length ? `<table><tr><th>Mã</th><th>Khách</th><th>Gói</th><th>Số tiền</th><th>Cách trả</th><th>Trạng thái</th><th>Thời gian</th><th></th></tr>
+      ${items.map((o) => `<tr><td><code>${esc(o.code)}</code></td><td>${esc(o.nickname || '(đã xoá)')}</td><td>${esc(o.package)} · ${fmt(o.xu)} xu</td>
+        <td>${money(o)}${o.paidAmount && o.paidAmount !== o.amount ? `<div class="muted">nhận ${fmt(o.paidAmount)}</div>` : ''}</td>
+        <td>${o.method === 'stars' ? '⭐ Stars' : '🏦 Chuyển khoản'}</td><td>${stPill(o.status)}${o.confirmedBy ? `<div class="muted">bởi ${esc(o.confirmedBy)}</div>` : ''}</td>
+        <td>${when(o.createdAt)}${o.paidAt ? `<div class="muted">trả ${when(o.paidAt)}</div>` : ''}</td>
+        <td class="row">
+          ${['pending', 'expired'].includes(o.status) && o.method === 'bank' ? `<button class="btn green" data-act="confirm" data-id="${o.id}">✓ Đã nhận tiền</button>` : ''}
+          ${o.status === 'pending' ? `<button class="btn" data-act="cancel" data-id="${o.id}">Huỷ</button>` : ''}
+          ${o.status === 'paid' ? `<button class="btn danger" data-act="refund" data-id="${o.id}">↩️ Hoàn</button>` : ''}
+        </td></tr>`).join('')}</table>`
+      : '<div class="card">Chưa có đơn nào.</div>'}
+    <p class="muted">“Đã nhận tiền”: dùng khi khách chuyển khoản nhưng ghi sai nội dung, hoặc chưa cài webhook tự động – kiểm tra sao kê ngân hàng trước khi xác nhận.
+      “Hoàn”: trừ lại xu đã cộng (nếu ví còn) và đánh dấu đơn đã hoàn; tiền chuyển trả khách bạn tự làm qua ngân hàng/Telegram.</p>`;
+  $('#poGo').onclick = () => payOrders($('#poSt').value, $('#poQ').value);
+  $('#poSt').onchange = () => payOrders($('#poSt').value, $('#poQ').value);
+  $('#poQ').onkeydown = (e) => { if (e.key === 'Enter') payOrders($('#poSt').value, $('#poQ').value); };
+  el.onclick = async (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const msg = { confirm: 'Xác nhận đã nhận đủ tiền cho đơn này? Xu sẽ được cộng ngay cho khách.', cancel: 'Huỷ đơn này?', refund: 'Hoàn đơn này? Xu đã cộng sẽ bị trừ lại.' }[b.dataset.act];
+    if (!confirm(msg)) return;
+    try { await api(`/admin/pay/orders/${b.dataset.id}/${b.dataset.act}`, { body: {} }); toast('Đã cập nhật ✓'); paymentsTab(); }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
+async function payBankTx() {
+  const el = $('#paySub');
+  const { items } = await api('/admin/pay/bank-tx');
+  el.innerHTML = `
+    <p class="muted">Tiền vào tài khoản do SePay báo về. Giao dịch không tìm được đơn (sai nội dung) hoặc chuyển thiếu sẽ có ghi chú – gán tay vào đúng đơn.</p>
+    ${items.length ? `<table><tr><th>Thời gian</th><th>Số tiền</th><th>Nội dung chuyển khoản</th><th>Đơn</th><th>Ghi chú</th><th></th></tr>
+      ${items.map((t) => `<tr><td>${when(t.created_at)}</td><td>${fmt(t.amount)}đ</td><td class="content">${esc(t.content)}</td>
+        <td>${t.order_id ? `#${t.order_id}` : '—'}</td><td>${t.note ? `<span class="pill warn">${esc(t.note)}</span>` : '<span class="pill ok">khớp</span>'}</td>
+        <td>${!t.order_id || t.note ? `<button class="btn" data-assign="${t.id}">🔗 Gán vào đơn</button>` : ''}</td></tr>`).join('')}</table>`
+      : '<div class="card">Chưa có giao dịch ngân hàng nào. Cài webhook SePay ở mục ⚙️ Cài đặt thanh toán.</div>'}`;
+  el.onclick = async (e) => {
+    const b = e.target.closest('[data-assign]'); if (!b) return;
+    const code = (prompt('Mã đơn hoặc số thứ tự đơn (ví dụ XSAB12CD34 hoặc 15):') || '').trim().toUpperCase();
+    if (!code) return;
+    try {
+      let id = Number(code);
+      if (!id) {
+        const { items: os } = await api(`/admin/pay/orders?q=${encodeURIComponent(code)}`);
+        const o = os.find((x) => x.code === code);
+        if (!o) return toast('Không tìm thấy đơn này', true);
+        id = o.id;
+      }
+      await api(`/admin/pay/bank-tx/${b.dataset.assign}/assign`, { body: { orderId: id } }); toast('Đã gán và cộng xu ✓'); paymentsTab();
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+async function payStars() {
+  const { items } = await api('/admin/payments');
+  $('#paySub').innerHTML = `
     ${items.length ? `<table><tr><th>Thời gian</th><th>Khách</th><th>Gói</th><th>Xu</th><th>Stars</th><th>Mã giao dịch</th></tr>
       ${items.map((p) => `<tr><td>${when(p.created_at)}</td><td>${esc(p.nickname || '(đã xoá)')}</td><td>${esc(p.package)}</td><td>${fmt(p.xu)}</td><td>${fmt(p.stars)} ⭐</td><td><code>${esc(p.charge_id)}</code></td></tr>`).join('')}</table>`
-      : '<div class="card">Chưa có giao dịch nào. Quán đang miễn phí hoặc chưa ai mua xu.</div>'}
-    <p class="muted">Hoàn tiền Stars: dùng mã giao dịch với lệnh refundStarPayment của Telegram Bot API.</p>`;
+      : '<div class="card">Chưa có giao dịch Stars nào.</div>'}
+    <p class="muted">Hoàn Stars: dùng mã giao dịch với lệnh refundStarPayment của Telegram Bot API, rồi bấm “Hoàn” ở đơn tương ứng để trừ xu.</p>`;
 }
+
+async function paySettings() {
+  const el = $('#paySub');
+  const c = await api('/admin/pay/settings');
+  el.innerHTML = `
+    <div class="card">
+      <h2>🏦 Tài khoản nhận chuyển khoản (VietQR)</h2>
+      <div class="row">
+        <label class="f">Ngân hàng <select id="bkBin"><option value="">— chọn —</option>${c.banks.map((b) => `<option value="${b.bin}" ${c.bank.bin === b.bin ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+        <label class="f">Số tài khoản <input id="bkAcc" value="${esc(c.bank.account)}" maxlength="19"></label>
+        <label class="f">Tên chủ tài khoản <input id="bkName" value="${esc(c.bank.name)}" maxlength="60" placeholder="NGUYEN VAN A"></label>
+      </div>
+      <div class="row">
+        <label class="f">Đơn hết hạn sau (phút) <input type="number" id="pyExp" min="5" max="1440" value="${esc(c.expiryMinutes)}"></label>
+        <label class="row"><input type="checkbox" id="pyEarly" ${c.allowBeforePaywall ? 'checked' : ''}> Cho phép nạp xu cả khi quán đang miễn phí</label>
+      </div>
+      <div id="qrPrev"></div>
+    </div>
+    <div class="card">
+      <h2>🔔 Tự động xác nhận bằng SePay</h2>
+      <ol class="muted">
+        <li>Đăng ký <a href="https://my.sepay.vn" target="_blank" rel="noopener">my.sepay.vn ↗</a>, liên kết tài khoản ngân hàng ở trên.</li>
+        <li>Mục Tích hợp WebHooks → Thêm webhook: sự kiện “Có tiền vào”, URL bên dưới, kiểu chứng thực “API Key”.</li>
+        <li>Dán API Key đó vào ô bên dưới rồi Lưu. Khách chuyển khoản đúng nội dung sẽ được cộng xu sau vài giây.</li>
+      </ol>
+      <label class="f">URL webhook <input readonly id="whUrl" value="${esc(c.webhookUrl.replace(/^http:\/\/(?!localhost|127\.)/, 'https://'))}"></label>
+      <label class="f">API Key SePay <input type="password" autocomplete="off" id="seKey" placeholder="${esc(c.sepayKey || 'chưa có')}"></label>
+      <p class="muted">Để trống = giữ khoá cũ. Chưa cài SePay vẫn bán được: khách chuyển khoản, bạn xem sao kê rồi bấm “✓ Đã nhận tiền” ở đơn.</p>
+    </div>
+    <div class="card">
+      <h2>🪙 Gói xu</h2>
+      <table id="pkT"><tr><th>Mã gói</th><th>Tên hiển thị</th><th>Xu</th><th>Giá chuyển khoản (đ)</th><th>Giá Stars (0 = không bán qua Telegram)</th><th></th></tr>
+        ${c.packages.map(pkgRow).join('')}</table>
+      <div class="row"><button class="btn" id="pkAdd">＋ Thêm gói</button></div>
+    </div>
+    <button class="btn primary" id="paySave">💾 Lưu cài đặt thanh toán</button>`;
+  $('#pkAdd').onclick = () => $('#pkT').insertAdjacentHTML('beforeend', pkgRow({ id: '', label: '', xu: 100, vnd: 20000, stars: 0 }));
+  $('#pkT').onclick = (e) => { const d = e.target.closest('[data-pkdel]'); if (d) d.closest('tr').remove(); };
+  $('#whUrl').onclick = (e) => e.target.select();
+  $('#paySave').onclick = async () => {
+    const packages = [...main.querySelectorAll('#pkT tr[data-pk]')].map((tr) => Object.fromEntries([...tr.querySelectorAll('[data-f]')].map((i) => [i.dataset.f, i.value.trim()])));
+    const body = { bank: { bin: $('#bkBin').value, account: $('#bkAcc').value, name: $('#bkName').value }, expiryMinutes: Number($('#pyExp').value), allowBeforePaywall: $('#pyEarly').checked, packages };
+    if ($('#seKey').value.trim()) body.sepayKey = $('#seKey').value.trim();
+    try {
+      const r = await api('/admin/pay/settings', { body });
+      toast('Đã lưu cài đặt thanh toán ✓');
+      await paySettings();
+      if (r.preview) $('#qrPrev').innerHTML = `<div class="row"><img class="qr" src="${r.preview}" alt="QR thử"><span class="muted">Mã QR thử 10.000đ, nội dung XSTHU – quét bằng app ngân hàng để kiểm tra đúng tên chủ tài khoản (đừng chuyển).</span></div>`;
+    } catch (err) { toast(err.message, true); }
+  };
+}
+const pkgRow = (p) => `<tr data-pk>
+  <td><input data-f="id" value="${esc(p.id)}" maxlength="20" placeholder="vd: sieuto"></td><td><input data-f="label" value="${esc(p.label)}" maxlength="40"></td>
+  <td><input type="number" data-f="xu" min="1" value="${esc(p.xu)}"></td><td><input type="number" data-f="vnd" min="1000" step="1000" value="${esc(p.vnd)}"></td>
+  <td><input type="number" data-f="stars" min="0" value="${esc(p.stars || 0)}"></td><td><button class="btn danger" data-pkdel>✕</button></td></tr>`;
 
 // ================= Điều hướng =================
 const TABS = { overview, ai: aiTab, cotu: cotuTab, economy: economyTab, users: () => usersTab(), reports: reportsTab, posts: postsTab, payments: paymentsTab };

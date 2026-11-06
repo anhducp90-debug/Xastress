@@ -70,6 +70,7 @@ app.use('/api', require('./dmRoutes'));
 const adminRoutes = require('./adminRoutes');
 adminRoutes.applyStored(); // nạp cài đặt quản trị đã lưu (thu phí, giá, Cô Tư)
 app.use('/api', adminRoutes);
+app.use('/api', require('./payRoutes'));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Không tìm thấy.' }));
 

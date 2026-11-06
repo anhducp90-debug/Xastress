@@ -9,7 +9,7 @@ const economy = require('./economy');
 const realtime = require('./realtime');
 const host = require('./host');
 const { requireAdmin } = require('./auth');
-const { DRINK_INFO, XU_PACKAGES } = require('./constants');
+const { DRINK_INFO } = require('./constants');
 const { clean } = require('./moderation');
 
 const router = express.Router();
@@ -48,7 +48,7 @@ router.get('/admin/overview', (_req, res) => {
     dmsToday: n('SELECT COUNT(*) n FROM dms WHERE created_at >= ?', t0),
     openReports: n('SELECT COUNT(DISTINCT target_type || target_id) n FROM reports'),
     payments: db.prepare('SELECT COUNT(*) count, COALESCE(SUM(stars),0) stars, COALESCE(SUM(xu),0) xu FROM payments').get(),
-    ai: { provider: ai.provider, chosen: ai.chosen, model: ai.model, usage: providers.usage },
+    ai: { provider: ai.provider, chosen: ai.chosen, model: ai.chatModel, fastModel: ai.fastModel, usage: providers.usage },
     cotu: { enabled: config.cotu.enabled },
   });
 });
@@ -60,14 +60,20 @@ router.get('/admin/settings', (_req, res) => {
   res.json({
     ai: {
       provider: c.chosen, active: c.provider, effort: c.effort,
-      models: { ...providers.DEFAULT_MODELS, ...(s.models || {}) },
+      // models[p] = { chat: model tâm sự, fast: model hoạt náo & kiểm duyệt }
+      models: Object.fromEntries(providers.PROVIDERS.map((p) => {
+        const m = (s.models || {})[p];
+        const chat = (typeof m === 'string' ? m : m && m.chat) || providers.DEFAULT_MODELS[p];
+        return [p, { chat, fast: (typeof m === 'string' ? m : m && m.fast) || chat }];
+      })),
+      recommended: providers.RECOMMENDED,
       keys: Object.fromEntries(providers.PROVIDERS.map((p) => [p, settings.secretHint(`${p}_key`) || (process.env[{ anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY' }[p]] ? '(.env)' : null)])),
     },
     cotu: Object.fromEntries(COTU_KEYS.map((k) => [k, config.cotu[k]])),
     paywall: { mode: config.paywall.mode, users: config.paywall.users },
     prices: Object.fromEntries(Object.entries(DRINK_INFO).map(([k, v]) => [k, v.price])),
     drinks: Object.fromEntries(Object.entries(DRINK_INFO).map(([k, v]) => [k, v.name])),
-    packages: XU_PACKAGES,
+    packages: require('./payments').packages(),
   });
 });
 
@@ -81,7 +87,19 @@ router.post('/admin/settings/ai', (req, res) => {
   }
   if (b.models) {
     next.models = { ...(cur.models || {}) };
-    for (const p of providers.PROVIDERS) if (typeof b.models[p] === 'string' && b.models[p].trim()) next.models[p] = clean(b.models[p], 80);
+    const okName = (v) => typeof v === 'string' && /^[\w.:\-/]{2,80}$/.test(v.trim());
+    for (const p of providers.PROVIDERS) {
+      const m = b.models[p];
+      if (m === undefined) continue;
+      const prev = typeof next.models[p] === 'object' ? next.models[p] : {};
+      const val = typeof m === 'string' ? { chat: m, fast: m } : m;
+      for (const k of ['chat', 'fast']) {
+        if (val[k] === undefined || val[k] === '') continue;
+        if (!okName(val[k])) return res.status(400).json({ error: `Tên model không hợp lệ: ${String(val[k]).slice(0, 40)}` });
+        prev[k] = val[k].trim();
+      }
+      next.models[p] = prev;
+    }
   }
   if (b.effort !== undefined) {
     if (!['low', 'medium', 'high'].includes(b.effort)) return res.status(400).json({ error: 'Mức suy nghĩ không hợp lệ.' });
@@ -93,13 +111,21 @@ router.post('/admin/settings/ai', (req, res) => {
   res.json({ ok: true, active: providers.current().provider });
 });
 
+// Danh sách model lấy trực tiếp từ nhà cung cấp (cần khoá API của nhà cung cấp đó)
+router.get('/admin/ai/models', async (req, res) => {
+  const p = req.query.provider;
+  if (!providers.PROVIDERS.includes(p)) return res.status(400).json({ error: 'Nhà cung cấp không hợp lệ.' });
+  try { res.json({ recommended: providers.RECOMMENDED[p], live: await providers.listModels(p) }); }
+  catch (err) { res.json({ recommended: providers.RECOMMENDED[p], live: [], error: `Không tải được danh sách: ${err.message.slice(0, 160)}` }); }
+});
+
 router.post('/admin/ai/test', async (_req, res) => {
   const c = providers.current();
   if (c.provider === 'none') return res.status(400).json({ error: 'Chưa có nhà cung cấp AI nào dùng được (kiểm tra khoá API).' });
   const t = Date.now();
   try {
     const text = await providers.complete({ system: 'Bạn là Cô Tư, bà chủ quán trà đá vỉa hè. Trả lời bằng tiếng Việt, một câu ngắn.', user: 'Chào cả quán một câu thật ngắn.' });
-    res.json({ ok: true, provider: c.provider, model: c.model, ms: Date.now() - t, text });
+    res.json({ ok: true, provider: c.provider, model: c.fastModel, chatModel: c.chatModel, ms: Date.now() - t, text });
   } catch (err) {
     res.status(502).json({ error: `Gọi ${c.provider} thất bại: ${err.message.slice(0, 200)}` });
   }
@@ -187,10 +213,9 @@ router.post('/admin/users/:id/xu', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const delta = parseInt(req.body && req.body.delta, 10);
   if (!Number.isSafeInteger(delta) || delta === 0 || Math.abs(delta) > 100000) return res.status(400).json({ error: 'Số xu không hợp lệ.' });
-  const r = db.prepare('UPDATE users SET xu = MAX(0, xu + ?) WHERE id = ? AND is_bot = 0').run(delta, id);
-  if (!r.changes) return res.status(404).json({ error: 'Không tìm thấy người dùng.' });
-  console.log(`[admin] ${req.user.nickname} chỉnh xu người dùng #${id}: ${delta > 0 ? '+' : ''}${delta}`);
-  res.json({ ok: true, xu: db.prepare('SELECT xu FROM users WHERE id = ?').get(id).xu });
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_bot = 0').get(id)) return res.status(404).json({ error: 'Không tìm thấy người dùng.' });
+  const xu = economy.addXu(id, delta, `Quản trị viên ${req.user.nickname} điều chỉnh`, `admin:${req.user.id}`);
+  res.json({ ok: true, xu });
 });
 
 // ---------- Bài tâm sự & thanh toán ----------

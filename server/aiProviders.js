@@ -14,6 +14,25 @@ const DEFAULT_MODELS = {
 };
 const ENV_KEYS = { anthropic: env.ANTHROPIC_API_KEY, openai: env.OPENAI_API_KEY, gemini: env.GEMINI_API_KEY };
 const PROVIDERS = ['anthropic', 'openai', 'gemini'];
+
+// Model gợi ý (Claude theo bảng giá hiện hành của Anthropic, $ cho mỗi 1 triệu token vào/ra).
+// GPT/Gemini: bấm "Tải danh sách model mới nhất" trên trang quản trị để lấy trực tiếp từ nhà cung cấp.
+const RECOMMENDED = {
+  anthropic: [
+    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 – mặc định, thông minh ($4 / $20)' },
+    { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 – mạnh nhất ($10 / $50)' },
+    { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 – nhanh, cân bằng ($2 / $10)' },
+    { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 – rẻ nhất, hợp hoạt náo ($0.10 / $0.50)' },
+  ],
+  openai: [
+    { id: 'gpt-5-mini', label: 'gpt-5-mini (gợi ý – bấm tải danh sách để xem model mới nhất)' },
+    { id: 'gpt-5', label: 'gpt-5 (gợi ý)' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash (gợi ý – bấm tải danh sách để xem model mới nhất)' },
+    { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro (gợi ý)' },
+  ],
+};
 const REFUSED = 'Chuyện này cô không nói tiếp được, con thông cảm nha. Nếu con đang gặp nguy hiểm, gọi ngay 115 hoặc đường dây Ngày Mai 096 306 1414 nhé.';
 
 // Thống kê dùng AI trong ngày (cho trang quản trị)
@@ -32,15 +51,23 @@ function current() {
   if (!provider) provider = (ENV_KEYS.anthropic || env.ANTHROPIC_AUTH_TOKEN) ? 'anthropic' : 'none';
   if (disabled || !PROVIDERS.includes(provider)) provider = 'none';
   const key = provider === 'none' ? null : (settings.getSecret(`${provider}_key`) || ENV_KEYS[provider] || null);
-  const model = (s.models && s.models[provider]) || DEFAULT_MODELS[provider];
+  // Mỗi nhà cung cấp có 2 model: chat = tâm sự (gói AI), fast = hoạt náo & kiểm duyệt
+  const m = (s.models && s.models[provider]) || {};
+  const chatModel = (typeof m === 'string' ? m : m.chat) || DEFAULT_MODELS[provider];
+  const fastModel = (typeof m === 'string' ? m : m.fast) || chatModel;
   const effort = s.effort || env.AI_EFFORT || 'medium';
   const usable = provider !== 'none' && (!!key || (provider === 'anthropic' && !!env.ANTHROPIC_AUTH_TOKEN));
-  return { provider: usable ? provider : 'none', chosen: provider, key, model, effort };
+  return { provider: usable ? provider : 'none', chosen: provider, key, model: chatModel, chatModel, fastModel, effort };
 }
 const isEnabled = () => current().provider !== 'none';
 
 // ---------- Claude (Anthropic SDK) ----------
+// Tính năng theo model: fallback phía server (khi bộ lọc an toàn từ chối) chỉ có ở một số model;
+// effort & structured outputs có từ thế hệ Claude 4.5/4.6 trở đi.
 const FALLBACK = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
+const fallbackOK = (m) => /^claude-(fable-5-1|opus-5-5|opus-5|sonnet-5-5)$/.test(m);
+const effortOK = (m) => /^claude-(fable|mythos|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/.test(m);
+const caps = (m) => (fallbackOK(m) ? FALLBACK : {});
 const clients = new Map();
 function anthropic(key) {
   const k = key || '__env__';
@@ -49,20 +76,26 @@ function anthropic(key) {
 }
 const A = {
   async complete(c, { system, user, schema }) {
+    const model = c.fastModel;
+    const oc = {};
+    if (effortOK(model)) oc.effort = 'low';
+    if (schema && effortOK(model)) oc.format = { type: 'json_schema', schema };
+    const sys = schema && !oc.format ? `${system}\nChỉ trả lời bằng một đối tượng JSON đúng schema sau, không thêm chữ nào khác: ${JSON.stringify(schema)}` : system;
     const res = await anthropic(c.key).beta.messages.create({
-      model: c.model, max_tokens: 2000, system, messages: [{ role: 'user', content: user }],
-      output_config: schema ? { effort: 'low', format: { type: 'json_schema', schema } } : { effort: 'low' },
-      ...FALLBACK,
+      model, max_tokens: 2000, system: sys, messages: [{ role: 'user', content: user }],
+      ...(Object.keys(oc).length ? { output_config: oc } : {}),
+      ...caps(model),
     }, { timeout: 20000, maxRetries: 1 });
     if (res.stop_reason === 'refusal') return null;
     const b = res.content.find((x) => x.type === 'text');
     return b ? b.text.trim() : null;
   },
   async stream(c, { system, messages, onText, signal }) {
+    const model = c.chatModel;
     const s = anthropic(c.key).beta.messages.stream({
-      model: c.model, max_tokens: 16000,
+      model, max_tokens: 16000,
       system: [{ type: 'text', text: system[0], cache_control: { type: 'ephemeral' } }, ...system.slice(1).map((t) => ({ type: 'text', text: t }))],
-      messages, output_config: { effort: c.effort }, ...FALLBACK,
+      messages, ...(effortOK(model) ? { output_config: { effort: c.effort } } : {}), ...caps(model),
     }, { signal });
     let text = '';
     for await (const ev of s) {
@@ -105,7 +138,7 @@ async function post(url, headers, body, signal) {
 const OPENAI_BASE = () => (env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
 const O = {
   async complete(c, { system, user, schema }) {
-    const body = { model: c.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+    const body = { model: c.fastModel, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
     if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'ket_qua', schema, strict: true } };
     const res = await post(`${OPENAI_BASE()}/chat/completions`, { Authorization: `Bearer ${c.key}` }, body);
     const data = await res.json();
@@ -115,7 +148,7 @@ const O = {
   },
   async stream(c, { system, messages, onText, signal }) {
     const res = await post(`${OPENAI_BASE()}/chat/completions`, { Authorization: `Bearer ${c.key}` }, {
-      model: c.model, stream: true, messages: [{ role: 'system', content: system.join('\n\n') }, ...messages],
+      model: c.chatModel, stream: true, messages: [{ role: 'system', content: system.join('\n\n') }, ...messages],
     }, signal);
     let text = '';
     for await (const d of sse(res)) {
@@ -143,12 +176,12 @@ const G = {
   async complete(c, { system, user, schema }) {
     const body = { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }] };
     if (schema) body.generationConfig = { responseMimeType: 'application/json', responseSchema: geminiSchema(schema) };
-    const res = await post(`${GEMINI_BASE()}/models/${encodeURIComponent(c.model)}:generateContent`, { 'x-goog-api-key': c.key }, body);
+    const res = await post(`${GEMINI_BASE()}/models/${encodeURIComponent(c.fastModel)}:generateContent`, { 'x-goog-api-key': c.key }, body);
     const text = geminiText(await res.json()).trim();
     return text || null;
   },
   async stream(c, { system, messages, onText, signal }) {
-    const res = await post(`${GEMINI_BASE()}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse`, { 'x-goog-api-key': c.key }, {
+    const res = await post(`${GEMINI_BASE()}/models/${encodeURIComponent(c.chatModel)}:streamGenerateContent?alt=sse`, { 'x-goog-api-key': c.key }, {
       systemInstruction: { parts: [{ text: system.join('\n\n') }] },
       contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
     }, signal);
@@ -176,6 +209,37 @@ async function run(method, args) {
   }
 }
 const complete = (args) => run('complete', args);
+
+// ---------- Danh sách model trực tiếp từ nhà cung cấp ----------
+const modelCache = new Map();
+async function listModels(provider) {
+  const c = current();
+  const key = settings.getSecret(`${provider}_key`) || ENV_KEYS[provider];
+  if (!key && !(provider === 'anthropic' && env.ANTHROPIC_AUTH_TOKEN)) throw new Error('Chưa có khoá API cho nhà cung cấp này.');
+  const ck = `${provider}:${(key || '').slice(-6)}`;
+  const hit = modelCache.get(ck);
+  if (hit && Date.now() - hit.at < 10 * 60e3) return hit.items;
+  let items = [];
+  if (provider === 'anthropic') {
+    for await (const m of anthropic(key).models.list({ limit: 100 })) items.push({ id: m.id, label: m.display_name || m.id, created: m.created_at });
+  } else if (provider === 'openai') {
+    const res = await fetch(`${OPENAI_BASE()}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const skip = /(embed|audio|tts|whisper|image|dall-e|realtime|transcribe|moderation|search|babbage|davinci|instruct)/;
+    items = (data.data || []).filter((m) => /^(gpt|o\d|chatgpt)/.test(m.id) && !skip.test(m.id))
+      .sort((a, b) => (b.created || 0) - (a.created || 0)).map((m) => ({ id: m.id, label: m.id, created: m.created }));
+  } else if (provider === 'gemini') {
+    const res = await fetch(`${GEMINI_BASE()}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    items = (data.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/.test(m.name) && !/(embedding|aqa|image|tts)/.test(m.name))
+      .map((m) => ({ id: m.name.replace(/^models\//, ''), label: `${m.displayName || m.name} (${m.name.replace(/^models\//, '')})` }));
+  }
+  void c;
+  modelCache.set(ck, { at: Date.now(), items });
+  return items;
+}
 const stream = (args) => run('stream', args);
 
-module.exports = { complete, stream, isEnabled, current, usage, PROVIDERS, DEFAULT_MODELS, Anthropic };
+module.exports = { complete, stream, isEnabled, current, listModels, usage, PROVIDERS, DEFAULT_MODELS, RECOMMENDED, Anthropic };

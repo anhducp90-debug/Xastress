@@ -4,7 +4,7 @@ const express = require('express');
 const economy = require('./economy');
 const telegram = require('./telegram');
 const { requireUser } = require('./auth');
-const { DRINKS, XU_PACKAGES } = require('./constants');
+const { DRINKS } = require('./constants');
 const { hit } = require('./ratelimit');
 
 const router = express.Router();
@@ -16,7 +16,8 @@ router.get('/wallet', requireUser, (req, res) => {
     ...economy.wallet(req.user.id),
     seated: economy.isSeated(req.user.id),
     economy: economy.status(),
-    telegram: { enabled: telegram.enabled(), linked: telegram.linkInfo(req.user.id), bot: telegram.botUsername(), packages: XU_PACKAGES },
+    telegram: { enabled: telegram.enabled(), linked: telegram.linkInfo(req.user.id), bot: telegram.botUsername(), packages: require('./payments').packages() },
+    pay: { canBuy: require('./payments').canBuy(), bank: require('./payments').bankReady() },
   });
 });
 

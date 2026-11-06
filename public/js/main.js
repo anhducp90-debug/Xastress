@@ -260,7 +260,12 @@ function connect() {
   socket.on('post:new', (p) => { game.sparkleTable(p.tableId); refreshTables(); });
   socket.on('post:remove', () => refreshTables());
   socket.on('notify', (n) => {
-    if (n.kind === 'xu') { toast(`🪙 Đã nạp ${n.amount} xu vào ví qua Telegram. Cảm ơn bạn ủng hộ quán!`); return; }
+    if (n.kind === 'xu') {
+      toast(`🪙 Đã nạp ${n.amount} xu vào ví${n.method === 'stars' ? ' qua Telegram' : ''}${n.balance != null ? ` (ví có ${n.balance} xu)` : ''}. Cảm ơn bạn ủng hộ quán!`);
+      const x = $('#xuNow'); if (x && n.balance != null) x.textContent = n.balance;
+      window.dispatchEvent(new CustomEvent('xs:xu', { detail: n }));
+      return;
+    }
     if (n.kind === 'tg_linked') { toast('✅ Đã liên kết Telegram. Chọn gói xu trong bot nhé.'); return; }
     toast(`${n.actor} ${notifText(n.kind, true, n.qty || 1)}${n.message ? `: “${n.message}”` : ''}`);
     if (n.funny) setTimeout(() => toast(`😅 ${n.funny}`), 700);
@@ -563,6 +568,8 @@ function openProfile() {
       </div>
       <button class="btn warm" type="submit">💾 Lưu</button>
     </form>
+    <h3>👛 Ví xu</h3>
+    <div class="actions"><button class="btn" type="button" data-topup>🪙 Nạp xu & lịch sử xu</button></div>
     <h3>🔑 Đổi mật khẩu</h3>
     <form id="passForm" class="form">
       <input name="oldPassword" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" required>

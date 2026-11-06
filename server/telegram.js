@@ -9,11 +9,13 @@ const db = require('./db');
 const config = require('./config');
 const economy = require('./economy');
 const realtime = require('./realtime');
-const { XU_PACKAGES } = require('./constants');
 
 const tg = config.telegram;
 const enabled = () => !!tg.token;
-const pkgById = Object.fromEntries(XU_PACKAGES.map((p) => [p.id, p]));
+// Gói xu lấy từ nền tảng thanh toán (admin chỉnh được); chỉ gói có giá Stars mới bán qua bot
+const payments = () => require('./payments');
+const starPackages = () => payments().packages().filter((p) => p.stars > 0);
+const pkgByIdNow = (id) => starPackages().find((p) => p.id === id);
 
 const q = {
   insertCode: db.prepare('INSERT INTO tg_codes (code, user_id, expires_at) VALUES (?, ?, ?)'),
@@ -50,7 +52,7 @@ function unlink(userId) { q.unlinkUser.run(userId); }
 
 // ---- Phía bot ----
 const PKG_KEYBOARD = () => ({
-  inline_keyboard: XU_PACKAGES.map((p) => [{ text: `🪙 ${p.label} – ${p.stars} ⭐`, callback_data: `buy:${p.id}` }]),
+  inline_keyboard: starPackages().map((p) => [{ text: `🪙 ${p.label} – ${p.stars} ⭐`, callback_data: `buy:${p.id}` }]),
 });
 const reply = (chatId, text, extra = {}) => call('sendMessage', { chat_id: chatId, text, ...extra });
 
@@ -94,7 +96,7 @@ async function handleMessage(m) {
 async function handleCallback(cb) {
   await call('answerCallbackQuery', { callback_query_id: cb.id });
   const [kind, id] = (cb.data || '').split(':');
-  const p = pkgById[id];
+  const p = pkgByIdNow(id);
   const link = q.linkByTg.get(cb.from.id);
   if (kind !== 'buy' || !p || !link) return;
   if (!economy.isPaywall()) return showPackages(cb.message.chat.id, link);
@@ -110,7 +112,7 @@ async function handleCallback(cb) {
 
 function parsePayload(payload) {
   const [uid, pid] = String(payload || '').split(':');
-  return { userId: Number(uid), pkg: pkgById[pid] };
+  return { userId: Number(uid), pkg: pkgByIdNow(pid) };
 }
 
 async function handlePreCheckout(pq) {
@@ -132,12 +134,11 @@ async function handlePaid(m) {
   const credited = db.transaction(() => {
     const r = q.payment.run(userId, m.from.id, pkg.id, pkg.xu, pkg.stars, sp.telegram_payment_charge_id, Date.now());
     if (!r.changes) return false; // đã cộng rồi (Telegram gửi lại)
-    economy.addXu(userId, pkg.xu);
+    payments().recordStars(userId, pkg, sp.telegram_payment_charge_id); // ghi đơn + cộng xu + sổ cái
     return true;
   })();
   if (!credited) return;
   const l = q.linkByTg.get(m.from.id);
-  realtime.notifyUser(userId, { kind: 'xu', amount: pkg.xu, balance: l ? l.xu : undefined });
   return reply(m.chat.id, `🎉 Đã cộng ${pkg.xu} xu! Ví hiện có ${l ? l.xu : '?'} xu. Quay lại quán gọi nước thôi ☕`);
 }
 

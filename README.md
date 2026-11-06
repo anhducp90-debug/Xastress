@@ -46,11 +46,12 @@ Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của ngư
 
 **🛡️ Trang quản trị `/admin.html`** (chỉ tài khoản trong `ADMIN_USERNAMES`; nút 🛡️ trong quán mở trang này)
 - 📊 **Tổng quan**: người đang trong quán, khách, tâm sự / bình luận / ly gọi / ly tặng / tin riêng hôm nay, báo cáo chờ xử lý, doanh thu Stars, tiến độ tới mốc thu phí, tình trạng AI.
-- 🤖 **AI cho Cô Tư**: chọn **Claude**, **ChatGPT (OpenAI API)**, **Gemini (Google API)** hoặc tắt; dán khoá API, đổi model, bấm **Thử gọi AI** để kiểm tra. Khoá được mã hoá AES‑256‑GCM trong CSDL và chỉ hiện 4 ký tự cuối.
+- 🤖 **AI cho Cô Tư**: chọn **Claude**, **ChatGPT (OpenAI API)**, **Gemini (Google API)** hoặc tắt; dán khoá API rồi **chọn model cho Cô Tư**: *model tâm sự* (trả lời khách gọi ly) và *model hoạt náo & kiểm duyệt* (chào khách, khơi chuyện, lọc lời nhắn – nên chọn loại nhanh, rẻ). Có sẵn danh sách gợi ý (Claude Opus 5.5 mặc định, Fable 5.1, Sonnet 5.5, Haiku 5.5…); nút **↻ Tải model mới nhất** hỏi thẳng nhà cung cấp danh sách model hiện có, hoặc tự gõ tên model. Bấm **Thử gọi AI** để kiểm tra. Khoá được mã hoá AES‑256‑GCM trong CSDL và chỉ hiện 4 ký tự cuối.
   > ⚠️ Gói **ChatGPT Plus** và **Gemini Advanced** là gói dùng trên app/web, **không có API** – không gắn vào website được. Cần khoá API: OpenAI tại platform.openai.com/api-keys, Gemini tại aistudio.google.com/apikey (có gói miễn phí nhưng Google có thể dùng dữ liệu ở gói này – nội dung tâm sự nhạy cảm nên dùng gói trả phí).
 - 🎙️ **Điều khiển Cô Tư**: bật/tắt hoạt náo, chỉnh nhịp khơi chuyện; cho Cô Tư **nói ngay** ở cả quán hoặc bàn chủ đề, **khơi chuyện / mở bình chọn** tức thì hoặc tự soạn bình chọn; xem chat cả quán trực tiếp.
 - 💰 **Kinh tế**: chế độ thu phí (auto/on/off), số khách bắt đầu thu phí, giá từng ly.
-- 👥 **Người dùng** (chỉ hiện biệt danh, không hiện tên đăng nhập): tìm, cộng/trừ xu, khoá/mở khoá. 🚩 **Báo cáo**, 📝 **Tâm sự** (ẩn/hiện/xoá), ⭐ **Thanh toán** Telegram Stars.
+- 👥 **Người dùng** (chỉ hiện biệt danh, không hiện tên đăng nhập): tìm, cộng/trừ xu, khoá/mở khoá. 🚩 **Báo cáo**, 📝 **Tâm sự** (ẩn/hiện/xoá), 💳 **Thanh toán** (xem bên dưới).
+- 💳 **Thanh toán**: doanh thu hôm nay / 7 ngày / tổng, biểu đồ 14 ngày; danh sách đơn nạp xu (lọc theo trạng thái, tìm mã đơn; **xác nhận đã nhận tiền**, **huỷ**, **hoàn** – hoàn sẽ trừ lại xu); giao dịch ngân hàng chưa khớp đơn (gán tay); giao dịch Telegram Stars; **cài đặt**: ngân hàng + số tài khoản + chủ tài khoản nhận tiền (có QR thử), khoá webhook SePay, thời hạn đơn, cho nạp trước khi thu phí, **sửa gói xu** (xu, giá VNĐ, giá Stars).
 
 **☕ Vào quán phải gọi 1 ly**
 - Mỗi lượt vào quán (online lại sau khi vắng hơn 30 phút – `VISIT_GAP_MINUTES`), khách được mời gọi 1 ly trước. Thực đơn tự mở ra, khung chat và các nút tương tác bị khoá cho tới khi gọi ly.
@@ -77,8 +78,9 @@ Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của ngư
 - **Chỉ tặng được ly đang có để tặng.** Gọi 1 ly trà đá thì có đúng 1 ly trà đá để tặng.
 - **Được tặng ly:** nếu chưa có "ly của mình" món đó thì 1 ly thành ly của mình (để uống), còn lại để tặng tiếp. Ví dụ được tặng **100 ly trà đá → 1 ly của mình + 99 ly để tặng**; tặng đi 10 ly → **còn 89**.
 - **Hiện tại hoàn toàn miễn phí** (tối đa 10 lần gọi ly miễn phí/người/ngày để tránh gom ly). Khi quán đủ **200 khách** (`PAYWALL_USERS`) thì bắt đầu tính phí: gọi ly sẽ dùng *ly của mình* nếu có (không kèm ly tặng) → phiếu chào mừng (khách mới có 1 phiếu) → trả xu; mỗi ly trả bằng phiếu/xu vẫn kèm 1 ly để tặng. `PAYWALL_MODE=on|off` để bật/tắt thủ công.
+- **Nạp xu bằng chuyển khoản ngân hàng (VietQR)**: khách bấm **🪙 Nạp xu** (trong thực đơn khi thiếu xu, hoặc 👤 → Ví xu) → chọn gói → hiện **mã VietQR** đã điền sẵn số tiền và nội dung `XS…` → quét bằng app ngân hàng bất kỳ. Khi tiền về, **SePay** gọi webhook → xu tự vào ví, màn hình báo ngay. Chuyển thiếu tiền / sai nội dung thì giao dịch nằm ở mục “Giao dịch ngân hàng” để quản trị gán tay. Chưa cài SePay vẫn bán được: quản trị xem sao kê rồi bấm “Đã nhận tiền”. Mỗi đơn chỉ cộng xu một lần; mọi lần cộng/trừ xu ghi vào **sổ xu** (khách xem được lịch sử).
 - **Mua xu qua bot Telegram**, thanh toán bằng **Telegram Stars ⭐** (Telegram bắt buộc dùng Stars cho hàng hoá số trong bot). Web tạo mã liên kết dùng một lần → mở bot → chọn gói → thanh toán → xu tự vào ví và web báo ngay. Mỗi giao dịch chỉ cộng xu một lần. Bot chỉ bán khi đã bắt đầu thu phí. Lệnh: `/mua`, `/vi`, `/huy`, `/paysupport`, `/terms`.
-- Giá món (xu) và gói xu (số ⭐) chỉnh trong `server/constants.js` (`DRINK_INFO`, `XU_PACKAGES`).
+- Giá món (xu) chỉnh ở trang quản trị → Kinh tế; gói xu (xu, giá VNĐ, giá ⭐) chỉnh ở trang quản trị → Thanh toán → Cài đặt.
 
 **🎁 Mời nước kèm lời nhắn – có lời đáp hài hước**
 - Ở mỗi tâm sự, mọi người tặng số ly mình đang có để tặng (1, 3, 10 hoặc tất cả) kèm lời nhắn.
@@ -124,6 +126,9 @@ server/
   economy.js      Luật ly: gọi 1 tặng kèm 1, ly của mình, ly để tặng, phiếu, xu, ngưỡng 200 khách
   telegram.js     Bot Telegram bán xu bằng Telegram Stars
   walletRoutes.js API ví, báo giá, liên kết Telegram
+  payments.js     Nền tảng thanh toán: gói xu, đơn nạp, khớp chuyển khoản, xác nhận/hoàn, sổ xu, thống kê
+  payRoutes.js    API nạp xu, webhook SePay, quản trị thanh toán
+  vietqr.js       Tạo mã VietQR (chuẩn EMVCo/NAPAS) cho chuyển khoản
   seat.js         Luật "gọi 1 ly mới vào quán" (lượt vào quán)
   dmRoutes.js     Tin riêng & danh sách chặn
   kindcheck.js    Kiểm tra lời nhắn tử tế (từ khoá + Claude)
@@ -168,9 +173,10 @@ npm test
    Script sẽ: cài Node 22, Nginx, Certbot; tạo user hệ thống `xastress`; cài vào `/opt/xastress`;
    chạy dịch vụ systemd `xastress`; cấu hình Nginx (WebSocket); bật tường lửa UFW;
    lấy chứng chỉ HTTPS Let's Encrypt; sao lưu CSDL mỗi ngày lúc 3h vào `/var/backups/xastress`.
-3. **Bật Cô Tư AI** (tuỳ chọn): điền `ANTHROPIC_API_KEY` trong `/opt/xastress/.env` (lấy khoá ở platform.claude.com). Mặc định dùng `claude-opus-5-5`; có thể đổi `AI_MODEL` sang `claude-sonnet-5-5` hoặc `claude-haiku-5-5` để giảm chi phí. Rồi `sudo systemctl restart xastress`.
-4. **Bot Telegram bán xu** (cần trước khi đủ 200 khách): nhắn @BotFather → `/newbot` → lấy token → điền `TELEGRAM_BOT_TOKEN` và `TELEGRAM_BOT_USERNAME` trong `.env`, sửa `TELEGRAM_SUPPORT`, rồi khởi động lại. Bot chạy kiểu long polling nên không cần mở thêm cổng. Telegram Stars không cần đăng ký cổng thanh toán; Stars thu được rút qua Fragment theo quy định của Telegram.
-5. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
+3. **Bật Cô Tư AI** (tuỳ chọn): điền `ANTHROPIC_API_KEY` trong `/opt/xastress/.env` (lấy khoá ở platform.claude.com). Mặc định dùng `claude-opus-5-5`; đổi model (kể cả model mới nhất) ngay trong trang quản trị → AI cho Cô Tư, không cần sửa `.env`. Rồi `sudo systemctl restart xastress`.
+4. **Nhận chuyển khoản (VietQR + SePay)**: vào trang quản trị → 💳 Thanh toán → Cài đặt: chọn ngân hàng, nhập số tài khoản, tên chủ tài khoản → Lưu (quét QR thử để kiểm tra đúng tên). Để xu tự vào ví: đăng ký my.sepay.vn, liên kết tài khoản ngân hàng đó, tạo webhook sự kiện “Có tiền vào” tới `https://xastress.info.vn/api/pay/webhook/sepay`, kiểu chứng thực **API Key**, rồi dán API Key vào ô “API Key SePay”. Nginx hiện tại đã chuyển mọi đường dẫn `/api/` về ứng dụng nên không cần sửa thêm.
+5. **Bot Telegram bán xu** (cần trước khi đủ 200 khách): nhắn @BotFather → `/newbot` → lấy token → điền `TELEGRAM_BOT_TOKEN` và `TELEGRAM_BOT_USERNAME` trong `.env`, sửa `TELEGRAM_SUPPORT`, rồi khởi động lại. Bot chạy kiểu long polling nên không cần mở thêm cổng. Telegram Stars không cần đăng ký cổng thanh toán; Stars thu được rút qua Fragment theo quy định của Telegram.
+6. **Chỉ định quản trị viên**: sửa `/opt/xastress/.env` → `ADMIN_USERNAMES=ten_dang_nhap_cua_ban`,
    rồi `sudo systemctl restart xastress` và đăng nhập lại.
 
 > Ở chế độ `NODE_ENV=production`, cookie đăng nhập có cờ `Secure` nên **bắt buộc truy cập qua HTTPS**.

@@ -26,7 +26,9 @@ const q = {
   setGlass: db.prepare('UPDATE cups SET glass = ? WHERE user_id = ? AND drink = ?'),
   useVoucher: db.prepare('UPDATE users SET voucher_self = voucher_self - 1 WHERE id = ? AND voucher_self > 0'),
   spendXu: db.prepare('UPDATE users SET xu = xu - ? WHERE id = ? AND xu >= ?'),
-  addXu: db.prepare('UPDATE users SET xu = xu + ? WHERE id = ?'),
+  addXu: db.prepare('UPDATE users SET xu = MAX(0, xu + ?) WHERE id = ?'),
+  balance: db.prepare('SELECT xu FROM users WHERE id = ?'),
+  ledger: db.prepare('INSERT INTO xu_ledger (user_id, delta, balance, reason, ref, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
   logOrder: db.prepare('INSERT INTO orders (user_id, drink, method, created_at) VALUES (?, ?, ?, ?)'),
   freeToday: db.prepare("SELECT COUNT(*) n FROM orders WHERE user_id = ? AND method = 'free' AND created_at > ?"),
   lastOrder: db.prepare('SELECT MAX(created_at) t FROM orders WHERE user_id = ?'),
@@ -96,6 +98,7 @@ function order(userId, drink) {
   if (plan.method === 'glass') q.setGlass.run(0, userId, drink);
   if (plan.method === 'voucher' && !q.useVoucher.run(userId).changes) throw new Error('voucher_changed');
   if (plan.method === 'xu' && !q.spendXu.run(plan.xu, userId, plan.xu).changes) throw new NeedXu(plan.xu, plan.balance);
+  if (plan.method === 'xu') logXu(userId, -plan.xu, `Gọi ly ${DRINK_INFO[drink].name}`, drink);
   if (plan.bonus) q.addTray.run(plan.bonus, userId, drink); // 1 ly tặng kèm vào khay
   q.logOrder.run(userId, drink, plan.method, Date.now());
   plan.tray = cupOf(userId, drink).qty;
@@ -122,7 +125,18 @@ function receive(userId, drink, qty) {
   return { toGlass, toTray, tray: c.qty + toTray };
 }
 
-function addXu(userId, xu) { q.addXu.run(xu, userId); }
+// Ghi sổ cái xu (gọi sau khi số dư đã thay đổi)
+function logXu(userId, delta, reason, ref = '') {
+  q.ledger.run(userId, delta, q.balance.get(userId).xu, reason, String(ref), Date.now());
+}
+// Cộng (hoặc trừ, nếu âm) xu và ghi sổ cái. Số dư không bao giờ âm.
+function addXu(userId, xu, reason = 'Điều chỉnh', ref = '') {
+  const before = q.balance.get(userId).xu;
+  q.addXu.run(xu, userId);
+  const after = q.balance.get(userId).xu;
+  if (after !== before) logXu(userId, after - before, reason, ref);
+  return after;
+}
 
 // "Đã ngồi vào quán": có gọi ít nhất 1 ly kể từ lúc bắt đầu lượt vào quán hiện tại
 function isSeated(userId) {
@@ -132,6 +146,6 @@ function isSeated(userId) {
 }
 
 module.exports = {
-  isPaywall, status, wallet, quoteOrder, order, giftable, give, receive, addXu, isSeated,
+  isPaywall, status, wallet, quoteOrder, order, giftable, give, receive, addXu, logXu, isSeated,
   NeedXu, NoCups, TooManyFree, participants, resetCache, FREE_ORDERS_PER_DAY,
 };
