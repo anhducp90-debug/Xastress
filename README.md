@@ -44,6 +44,14 @@ Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của ngư
 - **Tâm sự không bị bỏ trống**: sau ~2 phút (`HOST_POST_DELAY_SEC`) chưa ai bình luận thì Cô Tư vào động viên trước. Tin và bình luận của Cô Tư luôn gắn nhãn **AI**; tài khoản Cô Tư không tính vào số khách của quán.
 - Có `ANTHROPIC_API_KEY` thì Cô Tư tự nghĩ câu hỏi, câu trả lời, lời tổng kết, bình luận (Claude, mức suy nghĩ thấp cho nhanh); không có thì dùng kho câu soạn sẵn trong `server/host.js`. `HOST_ENABLED=0` để tắt hẳn.
 
+**🛡️ Trang quản trị `/admin.html`** (chỉ tài khoản trong `ADMIN_USERNAMES`; nút 🛡️ trong quán mở trang này)
+- 📊 **Tổng quan**: người đang trong quán, khách, tâm sự / bình luận / ly gọi / ly tặng / tin riêng hôm nay, báo cáo chờ xử lý, doanh thu Stars, tiến độ tới mốc thu phí, tình trạng AI.
+- 🤖 **AI cho Cô Tư**: chọn **Claude**, **ChatGPT (OpenAI API)**, **Gemini (Google API)** hoặc tắt; dán khoá API, đổi model, bấm **Thử gọi AI** để kiểm tra. Khoá được mã hoá AES‑256‑GCM trong CSDL và chỉ hiện 4 ký tự cuối.
+  > ⚠️ Gói **ChatGPT Plus** và **Gemini Advanced** là gói dùng trên app/web, **không có API** – không gắn vào website được. Cần khoá API: OpenAI tại platform.openai.com/api-keys, Gemini tại aistudio.google.com/apikey (có gói miễn phí nhưng Google có thể dùng dữ liệu ở gói này – nội dung tâm sự nhạy cảm nên dùng gói trả phí).
+- 🎙️ **Điều khiển Cô Tư**: bật/tắt hoạt náo, chỉnh nhịp khơi chuyện; cho Cô Tư **nói ngay** ở cả quán hoặc bàn chủ đề, **khơi chuyện / mở bình chọn** tức thì hoặc tự soạn bình chọn; xem chat cả quán trực tiếp.
+- 💰 **Kinh tế**: chế độ thu phí (auto/on/off), số khách bắt đầu thu phí, giá từng ly.
+- 👥 **Người dùng** (chỉ hiện biệt danh, không hiện tên đăng nhập): tìm, cộng/trừ xu, khoá/mở khoá. 🚩 **Báo cáo**, 📝 **Tâm sự** (ẩn/hiện/xoá), ⭐ **Thanh toán** Telegram Stars.
+
 **☕ Vào quán phải gọi 1 ly**
 - Mỗi lượt vào quán (online lại sau khi vắng hơn 30 phút – `VISIT_GAP_MINUTES`), khách được mời gọi 1 ly trước. Thực đơn tự mở ra, khung chat và các nút tương tác bị khoá cho tới khi gọi ly.
 - Chưa gọi ly thì chỉ xem: server chặn chat, đăng tâm sự, bình luận, bày tỏ cảm xúc, tặng nước. Người đã gọi ly có biểu tượng ☕ trước tên.
@@ -120,6 +128,9 @@ server/
   dmRoutes.js     Tin riêng & danh sách chặn
   kindcheck.js    Kiểm tra lời nhắn tử tế (từ khoá + Claude)
   host.js         Cô Tư hoạt náo: chào khách, khơi chuyện, bình chọn, trả lời, bình luận tâm sự
+  aiProviders.js  Claude / ChatGPT (OpenAI API) / Gemini – một giao diện chung
+  settings.js     Cài đặt quản trị lưu trong CSDL, mã hoá khoá API
+  adminRoutes.js  API trang quản trị
   db.js           Lược đồ SQLite
 public/
   index.html, css/style.css
@@ -128,6 +139,7 @@ public/
   js/game3d.js    Engine 3D: camera, ánh sáng ngày/đêm, NPC, nhãn chữ
   js/avatar3d.js  Xem trước nhân vật 3D
   js/menu.js      Menu nước, ví xu, chat Cô Tư AI, mời nước kèm lời nhắn
+  admin.html, js/admin.js, css/admin.css   Trang quản trị
   js/social.js    Chat 3 kênh, menu tương tác khi bấm vào người khác, khoá khi chưa gọi ly
   js/world.js     Bản đồ logic: bàn, va chạm, tìm đường (dùng chung 2D/3D)
   js/game.js, js/sprites.js, js/vnart.js   Bản 2D pixel dự phòng

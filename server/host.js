@@ -285,4 +285,4 @@ async function commentOnPost(postId) {
 function setHistory(fn) { S.history = fn; }
 function stop() { if (S.timer) clearInterval(S.timer); }
 
-module.exports = { init, setHistory, onJoin, onLeave, onOrder, onChat, onNewPost, vote, tick, startTopic, startPoll, closePoll, commentOnPost, stop, botId: () => S.botId };
+module.exports = { say, init, setHistory, onJoin, onLeave, onOrder, onChat, onNewPost, vote, tick, startTopic, startPoll, closePoll, commentOnPost, stop, botId: () => S.botId };

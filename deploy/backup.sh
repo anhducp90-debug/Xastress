@@ -7,4 +7,6 @@ mkdir -p "$DEST"
 STAMP=$(date +%Y%m%d-%H%M)
 sqlite3 "$APP_DIR/data/xastress.db" ".backup '$DEST/xastress-$STAMP.db'"
 gzip -f "$DEST/xastress-$STAMP.db"
+# Khoá mã hoá các khoá API (nếu dùng data/.secret thay vì APP_SECRET)
+[ -f "$APP_DIR/data/.secret" ] && install -m 600 "$APP_DIR/data/.secret" "$DEST/secret-$STAMP"
 ls -1t "$DEST"/xastress-*.db.gz | tail -n +15 | xargs -r rm --

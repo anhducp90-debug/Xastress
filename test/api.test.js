@@ -13,6 +13,9 @@ process.env.AUTH_RATE_LIMIT = '1000';
 process.env.SEAT_GATE = '0';
 process.env.HOST_ENABLED = '0'; // test riêng bên dưới gọi trực tiếp các hàm của Cô Tư // test riêng bên dưới bật lại luật "gọi ly mới vào quán"
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+// Máy chủ giả lập OpenAI & Gemini (cổng cố định cho test)
+process.env.OPENAI_BASE_URL = 'http://127.0.0.1:39901/v1';
+process.env.GEMINI_BASE_URL = 'http://127.0.0.1:39901/v1beta';
 process.env.TELEGRAM_BOT_USERNAME = 'xastress_bot';
 const { server } = require('../server/index.js');
 const { maskBadWords, hasCrisisSignal } = require('../server/moderation');
@@ -427,4 +430,112 @@ test('Cô Tư hoạt náo: trả lời khi được gọi, bình chọn + tổng
     const humans = require('../server/db').prepare('SELECT COUNT(*) n FROM users WHERE is_bot = 0 AND banned = 0').get().n;
     assert.strictEqual(w.economy.participants, humans);
   } finally { A.s.close(); B.s.close(); }
+});
+
+test('trang quản trị: phân quyền, tổng quan, kinh tế, người dùng, Cô Tư; AI chạy bằng ChatGPT (OpenAI API) và Gemini', async () => {
+  const http = require('http');
+  const seen = [];
+  const mock = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const b = JSON.parse(body || '{}');
+      const json = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      const sse = (chunks) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); for (const c of chunks) res.write(`data: ${c}\n\n`); res.end(); };
+      if (req.url.startsWith('/v1/chat/completions')) {
+        seen.push({ p: 'openai', auth: req.headers.authorization, stream: !!b.stream, fmt: !!b.response_format });
+        if (req.headers.authorization !== 'Bearer sk-test-1234') { res.writeHead(401); return res.end('{"error":"bad key"}'); }
+        if (b.stream) return sse([JSON.stringify({ choices: [{ delta: { content: 'Cô nghe ' } }] }), JSON.stringify({ choices: [{ delta: { content: 'đây con (GPT).' } }] }), '[DONE]']);
+        const content = b.response_format ? JSON.stringify({ verdict: 'ok', reason: 'Tử tế.' }) : 'Chào cả quán! (GPT)';
+        return json({ choices: [{ message: { role: 'assistant', content } }] });
+      }
+      if (req.url.startsWith('/v1beta/models/')) {
+        seen.push({ p: 'gemini', key: req.headers['x-goog-api-key'], stream: req.url.includes('stream'), fmt: !!(b.generationConfig && b.generationConfig.responseSchema) });
+        if (req.headers['x-goog-api-key'] !== 'gm-test-5678') { res.writeHead(403); return res.end('{}'); }
+        const part = (t) => JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: t }] } }] });
+        if (req.url.includes(':streamGenerateContent')) return sse([part('Cô nghe '), part('đây con (Gemini).')]);
+        const isNeg = /Đáng đời/.test(JSON.stringify(b.contents));
+        const t = b.generationConfig ? JSON.stringify({ verdict: isNeg ? 'negative' : 'ok', reason: isNeg ? 'Chê bai.' : 'Tử tế.' }) : 'Chào cả quán! (Gemini)';
+        return json({ candidates: [{ content: { parts: [{ text: t }] } }] });
+      }
+      res.writeHead(404); res.end();
+    });
+  });
+  await new Promise((r) => mock.listen(39901, '127.0.0.1', r));
+  const prevAI = process.env.AI_ENABLED;
+  delete process.env.AI_ENABLED;
+  const admin = client(), user = client();
+  await admin('/auth/register', { username: 'quanly', password: 'matkhau123', nickname: 'Chủ Quán' });
+  await user('/auth/register', { username: 'khach_thuong', password: 'matkhau123', nickname: 'Khách Thường' });
+  try {
+    assert.strictEqual((await user('/admin/overview')).status, 403, 'khách thường không vào được');
+    const ov = (await admin('/admin/overview')).data;
+    assert.ok(ov.users >= 2 && ov.economy.threshold === 200 && 'online' in ov && 'payments' in ov);
+
+    // ---- ChatGPT qua OpenAI API ----
+    let r = await admin('/admin/settings/ai', { provider: 'openai', keys: { openai: 'sk-test-1234' }, models: { openai: 'gpt-test' } });
+    assert.strictEqual(r.data.active, 'openai');
+    const st = (await admin('/admin/settings')).data;
+    assert.strictEqual(st.ai.keys.openai, '••••1234', 'chỉ hiện 4 ký tự cuối');
+    assert.ok(!JSON.stringify(st).includes('sk-test-1234'), 'không bao giờ trả khoá ra ngoài');
+    assert.ok(!JSON.stringify(require('../server/db').prepare("SELECT value FROM settings WHERE key = 'secrets'").get()).includes('sk-test-1234'), 'khoá được mã hoá trong CSDL');
+    r = await admin('/admin/ai/test', {});
+    assert.deepStrictEqual([r.data.ok, r.data.provider, r.data.text], [true, 'openai', 'Chào cả quán! (GPT)']);
+    // gói Cô Tư AI trả lời stream bằng GPT
+    const o = (await user('/order', { drink: 'trada' })).data;
+    const chat = await fetch(`${base}/api/ai/packs/${o.pack.id}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: user.cookie() }, body: JSON.stringify({ message: 'Con mệt quá cô ơi' }) });
+    const sseText = await chat.text();
+    assert.match(sseText, /event: delta\ndata: "Cô nghe "/);
+    assert.match(sseText, /event: done/);
+    assert.ok(seen.some((x) => x.p === 'openai' && x.stream));
+
+    // ---- Gemini qua Google API ----
+    await admin('/admin/settings/ai', { provider: 'gemini', keys: { gemini: 'gm-test-5678' } });
+    r = await admin('/admin/ai/test', {});
+    assert.deepStrictEqual([r.data.provider, r.data.text], ['gemini', 'Chào cả quán! (Gemini)']);
+    const pid = (await admin('/posts', { tableId: 'congviec', content: 'Chủ quán cũng có lúc mệt mỏi chứ' })).data.post.id;
+    r = await user(`/posts/${pid}/treat`, { drink: 'trada', message: 'Đáng đời' });
+    assert.strictEqual(r.status, 422, 'Gemini phân loại lời nhắn tiêu cực');
+    assert.ok(seen.some((x) => x.p === 'gemini' && x.fmt), 'gửi kèm schema JSON cho Gemini');
+    const o2 = (await user('/order', { drink: 'tragung' })).data;
+    const chat2 = await (await fetch(`${base}/api/ai/packs/${o2.pack.id}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: user.cookie() }, body: JSON.stringify({ message: 'alo cô' }) })).text();
+    assert.match(chat2, /Gemini/);
+    // khoá sai -> nút thử báo lỗi rõ ràng
+    await admin('/admin/settings/ai', { keys: { gemini: 'sai-khoa' } });
+    r = await admin('/admin/ai/test', {});
+    assert.strictEqual(r.status, 502);
+    assert.match(r.data.error, /gemini/);
+
+    // ---- Kinh tế ----
+    r = await admin('/admin/settings/economy', { paywall: { mode: 'on' }, prices: { caphe: 20 } });
+    assert.strictEqual(r.data.economy.paywall, true);
+    assert.strictEqual(r.data.economy.prices.caphe, 20);
+    assert.strictEqual((await user('/wallet/quote?drink=caphe')).data.text, 'phiếu chào mừng', 'khách mới vẫn còn phiếu');
+    await admin('/admin/settings/economy', { paywall: { mode: 'auto' }, prices: { caphe: 15 } });
+    assert.strictEqual((await user('/wallet')).data.economy.paywall, false);
+
+    // ---- Người dùng ----
+    const users = (await admin('/admin/users?q=Khách Thường')).data.items;
+    assert.strictEqual(users.length, 1);
+    assert.ok(!('username' in users[0]), 'không lộ tên đăng nhập');
+    r = await admin(`/admin/users/${users[0].id}/xu`, { delta: 50 });
+    assert.strictEqual(r.data.xu, 50);
+    await admin(`/admin/users/${users[0].id}/ban`, { banned: true });
+    assert.strictEqual((await user('/wallet')).status, 401, 'bị khoá thì mất phiên đăng nhập');
+    await admin(`/admin/users/${users[0].id}/ban`, { banned: false });
+
+    // ---- Điều khiển Cô Tư ----
+    assert.ok((await admin('/admin/cotu/say', { text: 'Tối nay quán mở tới khuya nha các con!' })).data.ok);
+    assert.ok((await admin('/admin/cotu/poll', { question: 'Trà đá hay trà chanh?', options: ['Trà đá', 'Trà chanh'] })).data.ok);
+    const hist = (await admin('/admin/chat?channel=public')).data.items;
+    assert.ok(hist.some((m) => m.npc && /mở tới khuya/.test(m.text)));
+    assert.ok(hist.some((m) => m.poll && m.poll.question === 'Trà đá hay trà chanh?'));
+    r = await admin('/admin/settings/cotu', { enabled: false, quietMinutes: 10 });
+    assert.deepStrictEqual([r.data.cotu.enabled, require('../server/config').cotu.quietMinutes], [false, 10]);
+    assert.strictEqual((await admin('/admin/settings/cotu', { quietMinutes: -1 })).status, 400);
+  } finally {
+    await admin('/admin/settings/ai', { provider: 'none' });
+    if (prevAI !== undefined) process.env.AI_ENABLED = prevAI;
+    mock.close();
+  }
 });

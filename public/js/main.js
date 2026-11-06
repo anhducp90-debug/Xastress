@@ -696,7 +696,7 @@ const menu = createMenu({
   setTimer: (t) => { if (breathTimer) clearInterval(breathTimer); breathTimer = t; },
   clearTimer: () => { if (breathTimer) { clearInterval(breathTimer); breathTimer = null; } },
 });
-const OPENERS = { menu: () => menu.openMenu(), write: () => openWrite(), feed: openFeed, mine: openMine, notifs: openNotifs, profile: openProfile, admin: openAdmin, support: openSupport, rules: openRules };
+const OPENERS = { menu: () => menu.openMenu(), write: () => openWrite(), feed: openFeed, mine: openMine, notifs: openNotifs, profile: openProfile, admin: () => window.open('/admin.html', '_blank', 'noopener'), support: openSupport, rules: openRules };
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-open]');
   if (!b) return;

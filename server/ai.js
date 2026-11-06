@@ -1,12 +1,10 @@
 'use strict';
-// Cô Tư AI – trợ lý tâm sự của quán, chạy trên Claude API.
-// Bật bằng ANTHROPIC_API_KEY trong .env. Không có khoá thì quán vẫn chạy, chỉ tắt phần AI.
-const Anthropic = require('@anthropic-ai/sdk');
-const config = require('./config');
+// Cô Tư AI – trợ lý tâm sự của quán. Chạy trên Claude, ChatGPT (OpenAI API) hoặc Gemini (Google API):
+// chọn nhà cung cấp + dán khoá API trên trang quản trị, hoặc đặt trong .env.
+// Không có khoá thì quán vẫn chạy, Cô Tư dùng câu soạn sẵn.
+const providers = require('./aiProviders');
 
-const client = config.ai.enabled ? new Anthropic() : null;
-// Tự chuyển sang model dự phòng nếu bộ lọc an toàn từ chối (server-side fallback)
-const FALLBACK = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
+const { Anthropic } = providers;
 
 // Lời dặn chung – giữ cố định (không chèn thời gian/biến) để tận dụng prompt caching
 const BASE_PROMPT = `Bạn là "Cô Tư AI" – trợ lý tâm sự của quán trà đá vỉa hè online "Trà Đá Xả Stress" (xastress.info.vn).
@@ -39,7 +37,7 @@ const STYLES = {
   nuocmia: 'Ly khách gọi: NƯỚC MÍA – gói "Tiếp thêm năng lượng". Cổ vũ nhiệt tình nhưng chân thành, giúp khách nhìn thấy những điều nhỏ đang ổn và một điều đáng mong chờ.',
 };
 
-function isEnabled() { return !!client; }
+function isEnabled() { return providers.isEnabled(); }
 
 /**
  * Stream câu trả lời của Cô Tư. onText(delta) được gọi cho từng đoạn chữ.
@@ -47,30 +45,7 @@ function isEnabled() { return !!client; }
  * Trả về toàn bộ câu trả lời (chuỗi).
  */
 async function streamReply(drink, history, onText, signal) {
-  const stream = client.beta.messages.stream({
-    model: config.ai.model,
-    max_tokens: 16000,
-    system: [
-      { type: 'text', text: BASE_PROMPT, cache_control: { type: 'ephemeral' } },
-      { type: 'text', text: STYLES[drink] || STYLES.trada },
-    ],
-    messages: history,
-    output_config: { effort: config.ai.effort },
-    ...FALLBACK,
-  }, { signal });
-  let text = '';
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      text += event.delta.text;
-      onText(event.delta.text);
-    }
-  }
-  const final = await stream.finalMessage();
-  if (final.stop_reason === 'refusal' && !text.trim()) {
-    text = 'Chuyện này cô không nói tiếp được, con thông cảm nha. Nếu con đang gặp nguy hiểm, gọi ngay 115 hoặc đường dây Ngày Mai 096 306 1414 nhé.';
-    onText(text);
-  }
-  return text.trim();
+  return providers.stream({ system: [BASE_PROMPT, STYLES[drink] || STYLES.trada], messages: history, onText, signal });
 }
 
 // ---- Phân loại lời nhắn kèm ly nước ----
@@ -86,17 +61,9 @@ const SCHEMA = {
 };
 
 async function classifyKindMessage(text) {
-  const res = await client.beta.messages.create({
-    model: config.ai.model,
-    max_tokens: 2000,
-    system: CLASSIFY_PROMPT,
-    messages: [{ role: 'user', content: `Lời nhắn: """${text}"""` }],
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
-    ...FALLBACK,
-  }, { timeout: 15000, maxRetries: 1 });
-  if (res.stop_reason === 'refusal') return { verdict: 'negative', reason: 'Lời nhắn không phù hợp.' };
-  const block = res.content.find((b) => b.type === 'text');
-  return JSON.parse(block.text);
+  const out = await providers.complete({ system: CLASSIFY_PROMPT, user: `Lời nhắn: «${text}»`, schema: SCHEMA });
+  if (!out) return { verdict: 'negative', reason: 'Lời nhắn không phù hợp.' };
+  return JSON.parse(out);
 }
 
 // ---- Cô Tư hoạt náo: nói chuyện ngắn trong chat chung, khơi mào chủ đề, động viên bài tâm sự ----
@@ -116,17 +83,7 @@ const TOPIC_SCHEMA = {
 };
 
 async function hostCreate(system, userText, format) {
-  const res = await client.beta.messages.create({
-    model: config.ai.model,
-    max_tokens: 2000,
-    system,
-    messages: [{ role: 'user', content: userText }],
-    output_config: format ? { effort: 'low', format } : { effort: 'low' },
-    ...FALLBACK,
-  }, { timeout: 20000, maxRetries: 1 });
-  if (res.stop_reason === 'refusal') return null;
-  const block = res.content.find((b) => b.type === 'text');
-  return block ? block.text.trim() : null;
+  return providers.complete({ system, user: userText, schema: format ? format.schema : null });
 }
 
 // Cô Tư đáp lại khi được gọi trong chat. context: các dòng chat gần nhất "Tên: nội dung"

@@ -257,4 +257,10 @@ function seated(userId) {
   io.to(`user:${userId}`).emit('seated');
 }
 
-module.exports = { init, broadcast, notifyUser, kickUser, seated, WORLD, CHANNELS };
+function stats() {
+  const ids = [...new Set([...players.values()].map((p) => p.userId))];
+  return { online: ids.length, onlineIds: ids };
+}
+function getHistory(ch) { return (history.get(ch) || []).slice(); }
+
+module.exports = { init, broadcast, notifyUser, kickUser, seated, stats, getHistory, WORLD, CHANNELS };
