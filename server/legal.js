@@ -27,6 +27,8 @@ function info() {
     minAge: 16,
     aiDailyPerUser: parseInt(process.env.AI_USER_DAILY || '60', 10),
     paywallUsers: config.paywall.users,
+    paywallMode: config.paywall.mode,
+    paywallOn: require('./economy').isPaywall(),
     packages: require('./payments').packages().map((p) => ({ label: p.label, xu: p.xu, vnd: p.vnd, stars: p.stars })),
     orderExpiryMinutes: require('./payments').config().expiryMinutes,
   };

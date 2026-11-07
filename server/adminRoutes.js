@@ -19,6 +19,11 @@ const COTU_KEYS = ['enabled', 'quietMinutes', 'gapMinutes', 'tableQuietMinutes',
 
 // Nạp cài đặt đã lưu vào cấu hình đang chạy (gọi lúc khởi động và sau mỗi lần lưu)
 function applyStored() {
+  // Một lần duy nhất: tắt thu phí cho tới khi quản trị viên tự bật lại trong trang quản trị
+  if (!settings.get('paywall_off_v1')) {
+    settings.set('paywall', { ...settings.get('paywall', {}), mode: 'off' });
+    settings.set('paywall_off_v1', Date.now());
+  }
   const pw = settings.get('paywall');
   if (pw) Object.assign(config.paywall, pw);
   const prices = settings.get('prices', {});

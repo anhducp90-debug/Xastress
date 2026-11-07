@@ -41,7 +41,8 @@ function config() {
   };
 }
 const bankReady = () => { const b = config().bank; return /^\d{6}$/.test(b.bin) && !!b.account; };
-const canBuy = () => economy.isPaywall() || config().allowBeforePaywall;
+// Tắt thu phí (mode off) = không bán xu, kể cả khi bật "cho nạp trước khi thu phí"
+const canBuy = () => economy.isPaywall() || (config().allowBeforePaywall && require('./config').paywall.mode === 'auto');
 const bankName = (bin) => (vietqr.BANKS.find((b) => b.bin === bin) || {}).name || `Ngân hàng ${bin}`;
 
 // Mã đơn = nội dung chuyển khoản: "XS" + 8 ký tự dễ đọc (không có 0/O/1/I)

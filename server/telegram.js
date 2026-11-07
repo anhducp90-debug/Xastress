@@ -59,6 +59,7 @@ const reply = (chatId, text, extra = {}) => call('sendMessage', { chat_id: chatI
 async function showPackages(chatId, link) {
   const st = economy.status();
   if (!st.paywall) {
+    if (st.mode === 'off') return reply(chatId, '🎉 Quán đang MIỄN PHÍ cho tất cả mọi người, chưa bán xu. Khi quán mở bán, Cô Tư sẽ báo ở đây nhé!');
     return reply(chatId, `🎉 Quán đang MIỄN PHÍ cho tất cả mọi người (${st.participants}/${st.threshold} khách). Bạn chưa cần mua xu đâu!\nKhi quán đủ ${st.threshold} khách, Cô Tư sẽ mở bán xu ở đây.`);
   }
   return reply(chatId, `👛 Ví của ${link.nickname}: ${link.xu} xu\nChọn gói xu (thanh toán bằng Telegram Stars ⭐):`, { reply_markup: PKG_KEYBOARD() });

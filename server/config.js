@@ -22,10 +22,11 @@ module.exports = {
   trustProxy: env.TRUST_PROXY === '1',
   sessionDays: 30,
   // Thu phí bật khi quán có đủ PAYWALL_USERS người tham gia (mặc định 200).
-  // PAYWALL_MODE=auto (theo số người) | on (bật ngay) | off (miễn phí mãi)
+  // PAYWALL_MODE=off (mặc định: miễn phí, không bán xu) | auto (tự thu phí khi đủ số người) | on (bật ngay)
+  // Sau lần chạy đầu, chế độ được chỉnh trong trang quản trị → Kinh tế & thu phí.
   paywall: {
     users: parseInt(env.PAYWALL_USERS || '200', 10),
-    mode: ['on', 'off'].includes(env.PAYWALL_MODE) ? env.PAYWALL_MODE : 'auto',
+    mode: ['on', 'auto'].includes(env.PAYWALL_MODE) ? env.PAYWALL_MODE : 'off',
   },
   // Mỗi lượt vào quán phải gọi 1 ly mới được chat/đăng bài/tặng nước (SEAT_GATE=0 để tắt)
   seatGate: env.SEAT_GATE !== '0',

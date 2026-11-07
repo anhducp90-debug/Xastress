@@ -96,7 +96,7 @@ export function createMenu(ctx) {
             <span>🎟️ Phiếu gọi ly miễn phí: ${w.vouchers.self}</span>
             ${topupBtn(w)}</div>`
         : html`<div class="wallet free"><span>🎉 Quán đang <b>miễn phí</b> · gọi 1 ly được <b>tặng kèm 1 ly</b> để mời người khác</span>
-            <span class="tag">${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí</span></div>`}
+            <span class="tag">${e.mode === 'off' ? 'Gọi nước, tâm sự với Cô Tư đều miễn phí' : `${e.participants}/${e.threshold} khách · đủ ${e.threshold} khách mới bắt đầu tính phí`}</span></div>`}
       ${hasTray ? html`<div class="tray">🎁 Ly để tặng: ${trayChips(w.tray)}</div>` : ''}
       ${w.glasses.length ? html`<div class="tray">🥤 Ly của bạn (uống miễn phí): ${w.glasses.map((k) => html`<span class="tchip">${drinkById[k] ? drinkById[k].icon : '🍵'}</span>`)}</div>` : ''}
     </div>`;

@@ -642,6 +642,30 @@ test('nền tảng thanh toán: VietQR, webhook SePay, chuyển thiếu, trùng,
   assert.strictEqual((await admin('/admin/pay/settings', { packages: [{ id: 'x', xu: 10, vnd: 10 }] })).status, 400);
 });
 
+test('tắt thu phí: không bán xu cho tới khi quản trị viên bật lại', async () => {
+  const settings = require('../server/settings');
+  const { applyStored } = require('../server/adminRoutes');
+  assert.ok(settings.get('paywall_off_v1'), 'lần chạy đầu đã tự tắt thu phí');
+  const ad = client();
+  await ad('/auth/login', { username: 'quanly', password: 'matkhau123' });
+  const k = client();
+  await k('/auth/register', { username: 'tatphi_k', password: 'matkhau123', consent: C });
+  await ad('/admin/settings/economy', { paywall: { mode: 'off' } });
+  await ad('/admin/pay/settings', { allowBeforePaywall: true });
+  let r = await k('/pay/info');
+  assert.strictEqual(r.data.canBuy, false, 'tắt thu phí thì không bán xu dù cho phép nạp trước');
+  assert.strictEqual(r.data.paywall, false);
+  r = await k('/pay/orders', { package: r.data.packages[0].id });
+  assert.strictEqual(r.status, 400);
+  // quản trị viên bật lại -> giữ nguyên sau khi khởi động lại (không bị tắt lần nữa)
+  await ad('/admin/settings/economy', { paywall: { mode: 'on' } });
+  applyStored();
+  assert.strictEqual((await k('/pay/info')).data.canBuy, true);
+  assert.strictEqual((await client()('/site-info')).data.paywallOn, true);
+  await ad('/admin/settings/economy', { paywall: { mode: 'off' } });
+  assert.strictEqual((await k('/pay/info')).data.canBuy, false);
+});
+
 test('pháp lý & tài khoản: đồng ý điều khoản, mã khôi phục, tải dữ liệu, xác thực 2 bước cho quản trị', async () => {
   const totp = require('../server/totp');
   const a = client();

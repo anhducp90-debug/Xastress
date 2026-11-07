@@ -54,10 +54,10 @@ async function overview() {
         .map(([k, v]) => `<div class="tile"><div class="v">${esc(typeof v === 'number' ? fmt(v) : v)}</div><div class="k">${k}</div></div>`).join('')}
     </div>
     <div class="card">
-      <b>💰 Thu phí:</b> ${e.paywall ? '<span class="pill">Đang thu phí</span>' : '<span class="pill ok">Đang miễn phí</span>'}
-      <span class="muted">· chế độ ${esc(e.mode)}</span>
+      <b>💰 Thu phí:</b> ${e.mode === 'off' ? '<span class="pill off">Đã tắt</span> <span class="muted">Miễn phí cho tất cả, không bán xu. Bật lại ở mục Kinh tế & thu phí.</span>'
+        : `${e.paywall ? '<span class="pill">Đang thu phí</span>' : '<span class="pill ok">Đang miễn phí</span>'} <span class="muted">· chế độ ${esc(e.mode)}</span>
       <div class="bar"><i data-w="${pct}"></i></div>
-      <span class="muted">${fmt(e.participants)}/${fmt(e.threshold)} khách (${pct}%) – đủ ${fmt(e.threshold)} khách sẽ tự bắt đầu thu phí ở chế độ "auto".</span>
+      <span class="muted">${fmt(e.participants)}/${fmt(e.threshold)} khách (${pct}%) – đủ ${fmt(e.threshold)} khách sẽ tự bắt đầu thu phí ở chế độ "auto".</span>`}
     </div>
     <div class="card">
       <b>🤖 AI của Cô Tư:</b> ${ai.provider === 'none' ? '<span class="pill off">Tắt</span>' : '<span class="pill ok">Đang chạy</span>'} ${esc(PROV[ai.provider])}
@@ -238,9 +238,9 @@ async function economyTab() {
       <h2>Thu phí</h2>
       <div class="row">
         <label class="f">Chế độ <select id="pwMode">
-          <option value="auto" ${s.paywall.mode === 'auto' ? 'selected' : ''}>auto – tự thu phí khi đủ số khách</option>
-          <option value="off" ${s.paywall.mode === 'off' ? 'selected' : ''}>off – miễn phí mãi</option>
-          <option value="on" ${s.paywall.mode === 'on' ? 'selected' : ''}>on – thu phí ngay</option></select></label>
+          <option value="off" ${s.paywall.mode === 'off' ? 'selected' : ''}>Tắt thu phí – miễn phí cho tất cả, không bán xu</option>
+          <option value="auto" ${s.paywall.mode === 'auto' ? 'selected' : ''}>Tự động – bắt đầu thu phí khi đủ số khách</option>
+          <option value="on" ${s.paywall.mode === 'on' ? 'selected' : ''}>Bật thu phí ngay</option></select></label>
         <label class="f">Số khách để bắt đầu thu phí <input type="number" id="pwUsers" min="1" value="${esc(s.paywall.users)}"></label>
       </div>
       <div class="bar"><i data-w="${Math.round((o.economy.participants / o.economy.threshold) * 100)}"></i></div>
@@ -258,7 +258,9 @@ async function economyTab() {
   $('#saveEco').onclick = async () => {
     const prices = {};
     main.querySelectorAll('[data-price]').forEach((i) => { prices[i.dataset.price] = Number(i.value); });
-    try { await api('/admin/settings/economy', { body: { paywall: { mode: $('#pwMode').value, users: Number($('#pwUsers').value) }, prices } }); toast('Đã lưu ✓'); economyTab(); }
+    const mode = $('#pwMode').value;
+    if (mode !== s.paywall.mode && mode !== 'off' && !confirm(mode === 'on' ? 'Bật thu phí NGAY? Khách sẽ phải dùng xu để gọi nước và quán bắt đầu bán xu.' : `Bật tự động thu phí khi quán đủ ${$('#pwUsers').value} khách?`)) return;
+    try { await api('/admin/settings/economy', { body: { paywall: { mode, users: Number($('#pwUsers').value) }, prices } }); toast('Đã lưu ✓'); economyTab(); }
     catch (err) { toast(err.message, true); }
   };
 }
@@ -447,7 +449,7 @@ async function paySettings() {
       </div>
       <div class="row">
         <label class="f">Đơn hết hạn sau (phút) <input type="number" id="pyExp" min="5" max="1440" value="${esc(c.expiryMinutes)}"></label>
-        <label class="row"><input type="checkbox" id="pyEarly" ${c.allowBeforePaywall ? 'checked' : ''}> Cho phép nạp xu cả khi quán đang miễn phí</label>
+        <label class="row"><input type="checkbox" id="pyEarly" ${c.allowBeforePaywall ? 'checked' : ''}> Cho phép nạp xu trước khi bắt đầu thu phí (chỉ áp dụng ở chế độ Tự động; khi Tắt thu phí thì quán không bán xu)</label>
       </div>
       <div id="qrPrev"></div>
     </div>
