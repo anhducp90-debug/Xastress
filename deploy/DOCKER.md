@@ -226,15 +226,22 @@ sudo docker compose restart                   # khởi động lại (sau khi s�
 # Cập nhật phiên bản mới
 sudo git pull && sudo docker compose up -d --build && sudo docker image prune -f
 
-# Sao lưu CSDL khi quán đang chạy → /opt/xastress/data/backups (giữ 14 bản)
+# Sao lưu CSDL ngay (quán vẫn chạy) → /opt/xastress/data/backups
 sudo docker exec xastress node deploy/docker-backup.js
+
+# Mất điện thoại cài ứng dụng xác thực 2 bước → tắt 2 bước cho tài khoản quản trị
+sudo docker exec xastress node deploy/admin-tool.js reset-2fa ten_dang_nhap_admin
 ```
 
-Để sao lưu tự động mỗi ngày lúc 3 giờ sáng, chạy `sudo crontab -e` và thêm dòng:
+Quán **tự sao lưu mỗi ngày lúc 3h sáng** (giờ Việt Nam), giữ 14 bản trong `data/backups`, không cần cài cron. Xem tình trạng và bấm "Sao lưu ngay" ở trang quản trị → 🔐 Bảo mật & pháp lý. Có thể chỉnh bằng các biến `BACKUP_HOUR`, `BACKUP_KEEP`, hoặc tắt bằng `BACKUP=0` trong `.env`.
 
+**Chép bản sao lưu ra ngoài VPS** (chạy trên máy tính của bạn, ví dụ mỗi tuần):
+
+```bash
+rsync -av user@<IP VPS>:/opt/xastress/data/backups/ ~/xastress-backups/
 ```
-0 3 * * * docker exec xastress node deploy/docker-backup.js >> /var/log/xastress-backup.log 2>&1
-```
+
+**Theo dõi quán sập:** đăng ký UptimeRobot (miễn phí) → New monitor → HTTP(s) → URL `https://xastress.lopchungminh.net/api/health`, chu kỳ 5 phút, nhận cảnh báo qua email hoặc Telegram.
 
 > ⚠️ Nên chép thêm thư mục `/opt/xastress/data` (gồm cả file `.secret` nếu không đặt `APP_SECRET`) ra ngoài VPS. Mất khoá mã hoá thì các khoá API đã lưu trong trang quản trị không giải mã được, phải nhập lại.
 

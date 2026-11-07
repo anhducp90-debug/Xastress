@@ -183,6 +183,7 @@ function setupAuth() {
       $$('.tab').forEach((x) => x.classList.toggle('active', x === t));
       $('#registerForm').classList.toggle('hidden', t.dataset.tab !== 'register');
       $('#loginForm').classList.toggle('hidden', t.dataset.tab !== 'login');
+      $('#recoverForm').classList.add('hidden');
     };
   }
   $('#registerForm').onsubmit = async (e) => {
@@ -190,8 +191,10 @@ function setupAuth() {
     const f = e.target;
     $('#regErr').textContent = '';
     try {
-      const { user } = await api('/auth/register', { body: { username: f.username.value.trim(), password: f.password.value, nickname: f.nickname.value.trim(), avatar: regAvatar } });
-      enter(user, true);
+      const consent = { terms: f.terms.checked, privacy: f.privacy.checked, age: f.age.checked };
+      const { user, recoveryCode } = await api('/auth/register', { body: { username: f.username.value.trim(), password: f.password.value, nickname: f.nickname.value.trim(), avatar: regAvatar, consent } });
+      await enter(user, false);
+      showRecoveryCode(recoveryCode, () => openNpc(true));
     } catch (err) { $('#regErr').textContent = err.message; }
   };
   $('#loginForm').onsubmit = async (e) => {
@@ -203,6 +206,19 @@ function setupAuth() {
       enter(user, false);
     } catch (err) { $('#loginErr').textContent = err.message; }
   };
+  $('#forgotBtn').onclick = () => { $('#loginForm').classList.add('hidden'); $('#recoverForm').classList.remove('hidden'); $('#recoverForm').username.value = $('#loginForm').username.value; };
+  $('#backLogin').onclick = () => { $('#recoverForm').classList.add('hidden'); $('#loginForm').classList.remove('hidden'); };
+  $('#recoverForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    $('#recErr').textContent = '';
+    try {
+      const { user, recoveryCode } = await api('/auth/recover', { body: { username: f.username.value.trim(), code: f.code.value, newPassword: f.newPassword.value } });
+      f.reset();
+      await enter(user, false);
+      showRecoveryCode(recoveryCode, null, 'Đã đặt lại mật khẩu ✓ Mã khôi phục cũ đã hết hiệu lực – đây là mã mới của bạn.');
+    } catch (err) { $('#recErr').textContent = err.message; }
+  };
 }
 
 async function enter(user, isNew) {
@@ -210,13 +226,63 @@ async function enter(user, isNew) {
   me = user;
   $('#auth').classList.add('hidden');
   for (const id of ['#hud', '#chatbar', '#help']) $(id).classList.remove('hidden');
-  $('#adminBtn').classList.toggle('hidden', !me.isAdmin);
+  $('#adminBtn').classList.toggle('hidden', !(me.isAdmin || me.adminMfa));
   connect();
   refreshTables();
   refreshNotifs();
   if (isNew) {
     setTimeout(() => openNpc(true), 600);
   }
+  // Điều khoản đã cập nhật -> hỏi đồng ý lại; chưa có mã khôi phục -> nhắc tạo
+  try {
+    const st = await api('/auth/me');
+    if (st.needsConsent) askConsent();
+    else if (st.user && !st.hasRecovery) setTimeout(() => toast('🔑 Bạn chưa có mã khôi phục – quên mật khẩu sẽ mất tài khoản. Tạo mã trong 👤 Hồ sơ nhé.'), 4000);
+  } catch { /* bỏ qua */ }
+}
+
+// Mã khôi phục: chỉ hiện một lần, quán không lưu được bản rõ
+function showRecoveryCode(code, then, intro) {
+  if (!code) { if (then) then(); return; }
+  openModal(html`<div class="recovery">
+    <h2>🔑 Mã khôi phục của bạn</h2>
+    <p>${intro || 'Quán ẩn danh nên không có email để lấy lại mật khẩu. Nếu quên mật khẩu, mã này là cách DUY NHẤT để vào lại tài khoản.'}</p>
+    <div class="rc-code" id="rcCode">${code}</div>
+    <div class="actions"><button class="btn" id="rcCopy" type="button">📋 Chép mã</button><button class="btn" id="rcSave" type="button">💾 Tải về tệp .txt</button></div>
+    <p class="tag">Lưu vào ghi chú điện thoại, trình quản lý mật khẩu hoặc chụp màn hình. Mã chỉ hiện <b>một lần</b>; mỗi mã dùng được một lần. Có thể tạo mã mới trong 👤 Hồ sơ.</p>
+    <label class="check"><input type="checkbox" id="rcOk"> Tôi đã lưu mã khôi phục</label>
+    <button class="btn big warm" id="rcDone" type="button" disabled>Vào quán ☕</button>
+  </div>`, 'recovery');
+  $('#rcCopy').onclick = async () => { try { await navigator.clipboard.writeText(code); toast('Đã chép mã ✓'); } catch { toast('Không chép được, hãy chép tay nhé', true); } };
+  $('#rcSave').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([`Mã khôi phục tài khoản quán Trà Đá Xả Stress (${location.host}):\n${code}\n\nDùng ở màn hình Đăng nhập → Quên mật khẩu. Không chia sẻ mã này cho ai.\n`], { type: 'text/plain' }));
+    a.download = 'ma-khoi-phuc-tra-da-xa-stress.txt'; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('#rcOk').onchange = (e) => { $('#rcDone').disabled = !e.target.checked; };
+  $('#rcDone').onclick = () => { closeModal(); if (then) setTimeout(then, 300); };
+}
+
+// Đồng ý lại khi Điều khoản / Chính sách thay đổi
+function askConsent() {
+  openModal(html`<div class="recovery">
+    <h2>📜 Quán cập nhật Điều khoản</h2>
+    <p>Mời bạn đọc và đồng ý để tiếp tục dùng quán:</p>
+    <form id="consentForm" class="form consent">
+      <label class="check"><input type="checkbox" name="terms" required> Tôi đồng ý <a href="/dieu-khoan.html" target="_blank">Điều khoản sử dụng</a> và <a href="/noi-quy.html" target="_blank">Nội quy quán</a>.</label>
+      <label class="check"><input type="checkbox" name="privacy" required> Tôi đã đọc <a href="/quyen-rieng-tu.html" target="_blank">Chính sách quyền riêng tư</a> và đồng ý để quán xử lý dữ liệu như mô tả, kể cả gửi tới dịch vụ AI ở nước ngoài khi tôi trò chuyện với Cô Tư AI.</label>
+      <label class="check"><input type="checkbox" name="age" required> Tôi từ đủ 16 tuổi trở lên.</label>
+      <button class="btn big warm" type="submit">✓ Đồng ý</button>
+      <button class="linkish" type="button" id="consentNo">Không đồng ý – đăng xuất</button>
+    </form>
+  </div>`, 'consent');
+  $('#consentForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try { await api('/auth/consent', { body: { consent: { terms: f.terms.checked, privacy: f.privacy.checked, age: f.age.checked } } }); closeModal(); toast('Cảm ơn bạn ✓'); }
+    catch (err) { toast(err.message, true); }
+  };
+  $('#consentNo').onclick = async () => { await api('/auth/logout', { body: {} }).catch(() => {}); closeModal(); showAuth(); };
 }
 
 function showAuth() {
@@ -570,6 +636,12 @@ function openProfile() {
     </form>
     <h3>👛 Ví xu</h3>
     <div class="actions"><button class="btn" type="button" data-topup>🪙 Nạp xu & lịch sử xu</button></div>
+    <h3>🔐 Quyền riêng tư & bảo mật</h3>
+    <div class="actions">
+      <a class="btn" href="/api/me/export" download>⬇️ Tải dữ liệu của tôi</a>
+      <button class="btn" type="button" id="newRc">🔑 Tạo mã khôi phục mới</button>
+    </div>
+    <p class="tag">Đọc <a href="/quyen-rieng-tu.html" target="_blank">Chính sách quyền riêng tư</a> · <a href="/dieu-khoan.html" target="_blank">Điều khoản</a> · <a href="/ai-va-suc-khoe.html" target="_blank">Cô Tư AI &amp; sức khoẻ tinh thần</a></p>
     <h3>🔑 Đổi mật khẩu</h3>
     <form id="passForm" class="form">
       <input name="oldPassword" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" required>
@@ -601,6 +673,12 @@ function openProfile() {
     } catch (err) { toast(err.message, true); }
   };
   $('#logout').onclick = async () => { await api('/auth/logout', { body: {} }).catch(() => {}); closeModal(); showAuth(); };
+  $('#newRc').onclick = async () => {
+    const password = prompt('Nhập mật khẩu để tạo mã khôi phục mới (mã cũ sẽ hết hiệu lực):');
+    if (!password) return;
+    try { const { recoveryCode } = await api('/auth/recovery-code', { body: { password } }); showRecoveryCode(recoveryCode, null, 'Mã mới đã thay mã cũ. Lưu lại cẩn thận nhé.'); }
+    catch (err) { toast(err.message, true); }
+  };
   $('#delAcc').onclick = async () => {
     const pw = prompt('Nhập mật khẩu để xác nhận XOÁ VĨNH VIỄN tài khoản cùng mọi tâm sự, bình luận:');
     if (!pw) return;
@@ -666,7 +744,7 @@ function openRules() {
       <li><b>Không nội dung nguy hiểm</b>: hướng dẫn tự hại, bạo lực, thù ghét.</li>
       <li>Thấy nội dung xấu, hãy bấm <b>🚩 Báo cáo</b>. Nội dung bị nhiều người báo cáo sẽ tự động ẩn.</li>
     </ol>
-    <p class="tag">Vi phạm có thể bị khoá tài khoản. Cảm ơn bạn đã giữ quán ấm áp 💛</p>`, 'rules');
+    <p class="tag">Vi phạm có thể bị khoá tài khoản. Cảm ơn bạn đã giữ quán ấm áp 💛 Xem đầy đủ: <a href="/noi-quy.html" target="_blank">Nội quy &amp; xử lý vi phạm</a> · <a href="/dieu-khoan.html" target="_blank">Điều khoản</a> · <a href="/quyen-rieng-tu.html" target="_blank">Quyền riêng tư</a></p>`, 'rules');
 }
 
 async function openAdmin() {

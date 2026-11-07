@@ -20,6 +20,7 @@ process.env.TELEGRAM_BOT_USERNAME = 'xastress_bot';
 const { server } = require('../server/index.js');
 const { maskBadWords, hasCrisisSignal } = require('../server/moderation');
 
+const C = { terms: true, privacy: true, age: true }; // đồng ý Điều khoản khi đăng ký
 let base;
 before(() => new Promise((r) => server.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${server.address().port}`; r(); })));
 after(() => { server.close(); fs.rmSync(tmp, { recursive: true, force: true }); setTimeout(() => process.exit(0), 50); });
@@ -49,10 +50,10 @@ test('kiểm duyệt ngôn từ & tín hiệu khủng hoảng', () => {
 
 test('luồng chính: đăng ký, đăng ẩn danh, động viên, thông báo, quyền riêng tư', async () => {
   const a = client(), b = client();
-  let r = await a('/auth/register', { username: 'nguoi_a', password: 'matkhau123', nickname: 'Trà Chanh' });
+  let r = await a('/auth/register', { username: 'nguoi_a', password: 'matkhau123', consent: C, nickname: 'Trà Chanh' });
   assert.strictEqual(r.status, 200);
   assert.ok(!('username' in r.data.user), 'không lộ tên đăng nhập');
-  r = await b('/auth/register', { username: 'nguoi_b', password: 'matkhau123' });
+  r = await b('/auth/register', { username: 'nguoi_b', password: 'matkhau123', consent: C });
   assert.strictEqual(r.status, 200);
   assert.match(r.data.user.nickname, /#\d{4}$/);
 
@@ -83,11 +84,11 @@ test('luồng chính: đăng ký, đăng ẩn danh, động viên, thông báo, 
 
 test('báo cáo 3 lần thì tự ẩn; chặn CSRF; sai mật khẩu', async () => {
   const author = client();
-  await author('/auth/register', { username: 'tacgia', password: 'matkhau123' });
+  await author('/auth/register', { username: 'tacgia', password: 'matkhau123', consent: C });
   const { data } = await author('/posts', { tableId: 'cuocsong', content: 'Nội dung bị báo cáo thử nghiệm' });
   for (let i = 0; i < 3; i++) {
     const c = client();
-    await c('/auth/register', { username: `rp${i}`, password: 'matkhau123' });
+    await c('/auth/register', { username: `rp${i}`, password: 'matkhau123', consent: C });
     await c('/report', { type: 'post', id: data.post.id, reason: 'spam' });
   }
   const list = await client()('/posts?table=cuocsong');
@@ -103,7 +104,7 @@ test('báo cáo 3 lần thì tự ẩn; chặn CSRF; sai mật khẩu', async ()
 
 test('xoá tài khoản xoá sạch dữ liệu', async () => {
   const c = client();
-  await c('/auth/register', { username: 'xoatoi', password: 'matkhau123' });
+  await c('/auth/register', { username: 'xoatoi', password: 'matkhau123', consent: C });
   const { data } = await c('/posts', { tableId: 'tinhcam', content: 'Chuyện tình cảm buồn quá đi mất' });
   const r = await c('/auth/delete', { password: 'matkhau123' });
   assert.strictEqual(r.status, 200);
@@ -116,9 +117,9 @@ async function orderN(c, drink, n) { for (let k = 0; k < n; k++) assert.strictEq
 
 test('luật ly: gọi 1 ly được tặng kèm 1 ly; chỉ tặng được ly trong khay; nhận 100 còn 99, tặng 10 còn 89', async () => {
   const a = client(), b = client(), x = client();
-  await a('/auth/register', { username: 'luat_a', password: 'matkhau123', nickname: 'Người A' });
-  await b('/auth/register', { username: 'luat_b', password: 'matkhau123' });
-  await x('/auth/register', { username: 'luat_x', password: 'matkhau123' });
+  await a('/auth/register', { username: 'luat_a', password: 'matkhau123', consent: C, nickname: 'Người A' });
+  await b('/auth/register', { username: 'luat_b', password: 'matkhau123', consent: C });
+  await x('/auth/register', { username: 'luat_x', password: 'matkhau123', consent: C });
   const pa = (await a('/posts', { tableId: 'congviec', content: 'Áp lực công việc quá trời luôn' })).data.post.id;
   const px = (await x('/posts', { tableId: 'cuocsong', content: 'Cuộc sống dạo này bế tắc quá' })).data.post.id;
 
@@ -137,7 +138,7 @@ test('luật ly: gọi 1 ly được tặng kèm 1 ly; chỉ tặng được ly 
 
   // A đã nhận 1 ly (thành "ly của mình"); 11 người khác gọi đủ ly rồi tặng A thêm 99 ly -> tổng 100
   const givers = [];
-  for (let i = 0; i < 10; i++) { const g = client(); await g('/auth/register', { username: `luat_g${i}`, password: 'matkhau123' }); givers.push(g); }
+  for (let i = 0; i < 10; i++) { const g = client(); await g('/auth/register', { username: `luat_g${i}`, password: 'matkhau123', consent: C }); givers.push(g); }
   for (let i = 0; i < 10; i++) {
     const n = i < 9 ? 10 : 9;
     await orderN(givers[i], 'trada', n);
@@ -162,12 +163,12 @@ test('luật ly: gọi 1 ly được tặng kèm 1 ly; chỉ tặng được ly 
 
 test('mời nước: 101 ly trà đá -> lời đáp hài hước, bộ đếm theo món', async () => {
   const a = client();
-  await a('/auth/register', { username: 'moi_a', password: 'matkhau123' });
+  await a('/auth/register', { username: 'moi_a', password: 'matkhau123', consent: C });
   const id = (await a('/posts', { tableId: 'congviec', content: 'Hôm nay bị mắng oan, buồn ghê', anonymous: true })).data.post.id;
   let last;
   for (let i = 0; i < 11; i++) {
     const g = client();
-    await g('/auth/register', { username: `moi_g${i}`, password: 'matkhau123' });
+    await g('/auth/register', { username: `moi_g${i}`, password: 'matkhau123', consent: C });
     const n = i < 10 ? 10 : 1;
     await orderN(g, 'trada', n);
     last = await g(`/posts/${id}/treat`, { drink: 'trada', qty: n, message: i === 10 ? 'Bạn không vô dụng đâu, nghỉ chút nhé' : '' });
@@ -183,8 +184,8 @@ test('mời nước: 101 ly trà đá -> lời đáp hài hước, bộ đếm t
 
 test('chặn lời nhắn tiêu cực kèm ly nước (không mất ly)', async () => {
   const a = client(), b = client();
-  await a('/auth/register', { username: 'neg_a', password: 'matkhau123' });
-  await b('/auth/register', { username: 'neg_b', password: 'matkhau123' });
+  await a('/auth/register', { username: 'neg_a', password: 'matkhau123', consent: C });
+  await b('/auth/register', { username: 'neg_b', password: 'matkhau123', consent: C });
   const { data } = await a('/posts', { tableId: 'giadinh', content: 'Cãi nhau với bố mẹ, mệt mỏi quá' });
   await orderN(b, 'trachanh', 1);
   for (const m of ['Đáng đời, ai bảo không nghe lời', 'Có thế thôi mà cũng than', 'đm cố lên', 'Mày yếu đuối quá']) {
@@ -200,7 +201,7 @@ test('chặn lời nhắn tiêu cực kèm ly nước (không mất ly)', async 
 
 test('khách mới: 0 xu, 1 phiếu; đang miễn phí thì gọi ly không trừ phiếu; giới hạn ly miễn phí mỗi ngày', async () => {
   const a = client();
-  await a('/auth/register', { username: 'vi_a', password: 'matkhau123' });
+  await a('/auth/register', { username: 'vi_a', password: 'matkhau123', consent: C });
   const w = (await a('/wallet')).data;
   assert.strictEqual(w.xu, 0);
   assert.deepStrictEqual(w.vouchers, { self: 1 });
@@ -232,8 +233,8 @@ test('đã thu phí: ly của mình -> phiếu -> xu (mỗi ly gọi vẫn kèm 
   const economy = require('../server/economy');
   const telegram = require('../server/telegram');
   const a = client(), c = client();
-  await a('/auth/register', { username: 'pay_a', password: 'matkhau123', nickname: 'Người A' });
-  await c('/auth/register', { username: 'pay_c', password: 'matkhau123', nickname: 'Người C' });
+  await a('/auth/register', { username: 'pay_a', password: 'matkhau123', consent: C, nickname: 'Người A' });
+  await c('/auth/register', { username: 'pay_c', password: 'matkhau123', consent: C, nickname: 'Người C' });
   const pc = (await c('/posts', { tableId: 'giadinh', content: 'C kể chuyện gia đình rối ren' })).data.post.id;
   await orderN(a, 'tragung', 1);
   await a(`/posts/${pc}/treat`, { drink: 'tragung', qty: 1 }); // C có "ly của mình" trà gừng
@@ -287,8 +288,8 @@ test('luật "gọi 1 ly mới vào quán" + chat 3 kênh, tin riêng, chặn, �
   const { io: ioc } = require('socket.io-client');
   config.seatGate = true;
   const a = client(), b = client();
-  await a('/auth/register', { username: 'sock_a', password: 'matkhau123', nickname: 'Khách A' });
-  await b('/auth/register', { username: 'sock_b', password: 'matkhau123', nickname: 'Khách B' });
+  await a('/auth/register', { username: 'sock_a', password: 'matkhau123', consent: C, nickname: 'Khách A' });
+  await b('/auth/register', { username: 'sock_b', password: 'matkhau123', consent: C, nickname: 'Khách B' });
   const conn = (c) => new Promise((resolve) => {
     const s = ioc(base, { extraHeaders: { Cookie: c.cookie() }, transports: ['websocket'] });
     s.on('world:init', (w) => resolve({ s, me: w.you, init: w }));
@@ -375,8 +376,8 @@ test('Cô Tư hoạt náo: trả lời khi được gọi, bình chọn + tổng
   const host = require('../server/host');
   const { io: ioc } = require('socket.io-client');
   const a = client(), b = client();
-  await a('/auth/register', { username: 'host_a', password: 'matkhau123', nickname: 'Khách Hỏi' });
-  await b('/auth/register', { username: 'host_b', password: 'matkhau123', nickname: 'Khách Vote' });
+  await a('/auth/register', { username: 'host_a', password: 'matkhau123', consent: C, nickname: 'Khách Hỏi' });
+  await b('/auth/register', { username: 'host_b', password: 'matkhau123', consent: C, nickname: 'Khách Vote' });
   const conn = (c) => new Promise((resolve) => {
     const s = ioc(base, { extraHeaders: { Cookie: c.cookie() }, transports: ['websocket'] });
     s.on('world:init', (w) => resolve({ s, me: w.you }));
@@ -471,8 +472,8 @@ test('trang quản trị: phân quyền, tổng quan, kinh tế, người dùng,
   const prevAI = process.env.AI_ENABLED;
   delete process.env.AI_ENABLED;
   const admin = client(), user = client();
-  await admin('/auth/register', { username: 'quanly', password: 'matkhau123', nickname: 'Chủ Quán' });
-  await user('/auth/register', { username: 'khach_thuong', password: 'matkhau123', nickname: 'Khách Thường' });
+  await admin('/auth/register', { username: 'quanly', password: 'matkhau123', consent: C, nickname: 'Chủ Quán' });
+  await user('/auth/register', { username: 'khach_thuong', password: 'matkhau123', consent: C, nickname: 'Khách Thường' });
   try {
     assert.strictEqual((await user('/admin/overview')).status, 403, 'khách thường không vào được');
     const ov = (await admin('/admin/overview')).data;
@@ -565,8 +566,8 @@ test('nền tảng thanh toán: VietQR, webhook SePay, chuyển thiếu, trùng,
 
   const admin = client(), u = client(), other = client();
   await admin('/auth/login', { username: 'quanly', password: 'matkhau123' });
-  await u('/auth/register', { username: 'mua_xu', password: 'matkhau123', nickname: 'Người Mua' });
-  await other('/auth/register', { username: 'mua_xu_2', password: 'matkhau123' });
+  await u('/auth/register', { username: 'mua_xu', password: 'matkhau123', consent: C, nickname: 'Người Mua' });
+  await other('/auth/register', { username: 'mua_xu_2', password: 'matkhau123', consent: C });
   assert.strictEqual((await u('/admin/pay/summary')).status, 403);
 
   // Chưa cấu hình ngân hàng / đang miễn phí
@@ -639,4 +640,76 @@ test('nền tảng thanh toán: VietQR, webhook SePay, chuyển thiếu, trùng,
   assert.ok(r.data.ok);
   assert.deepStrictEqual((await u('/pay/info')).data.packages.map((p) => p.xu), [25, 200]);
   assert.strictEqual((await admin('/admin/pay/settings', { packages: [{ id: 'x', xu: 10, vnd: 10 }] })).status, 400);
+});
+
+test('pháp lý & tài khoản: đồng ý điều khoản, mã khôi phục, tải dữ liệu, xác thực 2 bước cho quản trị', async () => {
+  const totp = require('../server/totp');
+  const a = client();
+  // thiếu đồng ý -> bị từ chối
+  let r = await a('/auth/register', { username: 'phaply_a', password: 'matkhau123' });
+  assert.strictEqual(r.status, 400);
+  r = await a('/auth/register', { username: 'phaply_a', password: 'matkhau123', consent: C });
+  assert.strictEqual(r.status, 200);
+  assert.match(r.data.recoveryCode, /^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+  const code1 = r.data.recoveryCode;
+  r = await a('/auth/me');
+  assert.strictEqual(r.data.needsConsent, false);
+  assert.strictEqual(r.data.hasRecovery, true);
+  // tải dữ liệu của tôi
+  await a('/posts', { tableId: 'congviec', mood: 'met', content: 'Hôm nay mệt quá trời luôn', anonymous: true });
+  r = await a('/me/export');
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.data.account.username, 'phaply_a');
+  assert.strictEqual(r.data.posts.length, 1);
+  assert.ok(!('pass_hash' in r.data.account) && !('recovery_hash' in r.data.account));
+  // quên mật khẩu: mã sai / mã đúng (viết thường, không gạch) / mã cũ hết hiệu lực
+  const b = client();
+  r = await b('/auth/recover', { username: 'phaply_a', code: 'AAAA-BBBB-CCCC-DDDD', newPassword: 'matkhaumoi1' });
+  assert.strictEqual(r.status, 401);
+  r = await b('/auth/recover', { username: 'phaply_a', code: code1.toLowerCase().replace(/-/g, ''), newPassword: 'matkhaumoi1' });
+  assert.strictEqual(r.status, 200);
+  assert.notStrictEqual(r.data.recoveryCode, code1);
+  r = await b('/auth/recover', { username: 'phaply_a', code: code1, newPassword: 'matkhaumoi2' });
+  assert.strictEqual(r.status, 401);
+  r = await client()('/auth/login', { username: 'phaply_a', password: 'matkhaumoi1' });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual((await a('/auth/me')).data.user, null, 'phiên cũ bị đăng xuất sau khi đổi mật khẩu');
+
+  // thông tin pháp lý công khai + quản trị điền thông tin
+  const ad = client();
+  await ad('/auth/login', { username: 'quanly', password: 'matkhau123' });
+  r = await ad('/admin/legal', { operator: 'Hộ kinh doanh Trà Đá', email: 'hotro@vidu.vn' });
+  assert.strictEqual(r.status, 200);
+  r = await client()('/site-info');
+  assert.strictEqual(r.data.operator, 'Hộ kinh doanh Trà Đá');
+  assert.strictEqual(r.data.minAge, 16);
+  assert.strictEqual((await ad('/admin/legal', { email: 'khong-phai-email' })).status, 400);
+
+  // bật xác thực 2 bước
+  r = await ad('/admin/mfa/setup', {});
+  assert.match(r.data.url, /^otpauth:\/\/totp\//);
+  const secret = r.data.secret;
+  const now = () => totp.codeAt(secret, Math.floor(Date.now() / 30000));
+  assert.strictEqual((await ad('/admin/mfa/enable', { code: '000000' === now() ? '111111' : '000000' })).status, 400);
+  assert.strictEqual((await ad('/admin/mfa/enable', { code: now() })).status, 200);
+  assert.strictEqual((await ad('/admin/overview')).status, 200, 'phiên vừa bật vẫn dùng tiếp được');
+  // đăng nhập lại: chưa nhập mã thì không vào được trang quản trị, cũng không còn quyền admin ở nơi khác
+  const ad2 = client();
+  await ad2('/auth/login', { username: 'quanly', password: 'matkhau123' });
+  r = await ad2('/admin/overview');
+  assert.strictEqual(r.status, 401);
+  assert.strictEqual(r.data.mfa, true);
+  r = await ad2('/auth/me');
+  assert.strictEqual(r.data.user.isAdmin, false);
+  assert.strictEqual(r.data.user.adminMfa, true);
+  // mã đã dùng ở trên (cùng bước thời gian) không dùng lại được -> lấy mã của bước kế tiếp
+  const next = totp.codeAt(secret, Math.floor(Date.now() / 30000) + 1);
+  assert.strictEqual((await ad2('/auth/mfa/verify', { code: next })).status, 200);
+  assert.strictEqual((await ad2('/admin/overview')).status, 200);
+  assert.strictEqual((await ad2('/auth/me')).data.user.isAdmin, true);
+
+  // sao lưu thủ công
+  r = await ad2('/admin/backup', {});
+  assert.strictEqual(r.status, 200);
+  assert.match(r.data.last.file, /^xastress-.*\.db$/);
 });

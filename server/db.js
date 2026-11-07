@@ -226,6 +226,11 @@ addColumn('users', 'voucher_gift', 'INTEGER NOT NULL DEFAULT 1'); // (cũ, khôn
 addColumn('users', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');       // tài khoản hệ thống (Cô Tư AI)
 addColumn('users', 'visit_start', 'INTEGER NOT NULL DEFAULT 0'); // lúc bắt đầu lượt vào quán hiện tại
 addColumn('users', 'last_seen', 'INTEGER NOT NULL DEFAULT 0');   // lúc rời quán gần nhất
+addColumn('users', 'consent_version', "TEXT NOT NULL DEFAULT ''"); // phiên bản Điều khoản/Chính sách khách đã đồng ý
+addColumn('users', 'consent_at', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'recovery_hash', "TEXT NOT NULL DEFAULT ''");  // mã khôi phục mật khẩu (bcrypt)
+addColumn('users', 'totp_secret', "TEXT NOT NULL DEFAULT ''");    // xác thực 2 bước của quản trị viên (đã mã hoá)
+addColumn('sessions', 'mfa', 'INTEGER NOT NULL DEFAULT 0');        // phiên đã qua xác thực 2 bước
 addColumn('cups', 'glass', 'INTEGER NOT NULL DEFAULT 0');         // 1 = đang có "ly của mình" món này để uống
 addColumn('notifications', 'message', "TEXT NOT NULL DEFAULT ''");
 addColumn('notifications', 'qty', 'INTEGER NOT NULL DEFAULT 1');
@@ -237,6 +242,7 @@ const purgeAi = db.prepare('DELETE FROM ai_packs WHERE expires_at < ?');
 const purge = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
 const purgeCodes = db.prepare('DELETE FROM tg_codes WHERE expires_at < ?');
 const purgeDms = db.prepare('DELETE FROM dms WHERE created_at < ?');
-setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); purgeCodes.run(Date.now()); purgeDms.run(Date.now() - 30 * 86400e3); }, 60 * 60 * 1000).unref();
+const purgeNotifs = db.prepare('DELETE FROM notifications WHERE created_at < ?');
+setInterval(() => { purge.run(Date.now()); purgeAi.run(Date.now() - 7 * 86400e3); purgeCodes.run(Date.now()); purgeDms.run(Date.now() - 30 * 86400e3); purgeNotifs.run(Date.now() - 90 * 86400e3); }, 60 * 60 * 1000).unref();
 
 module.exports = db;

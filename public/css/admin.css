@@ -77,3 +77,8 @@ ol.muted { padding-left: 20px; margin: 6px 0; }
 .mrow select, .mrow input { width: 100%; }
 .mrow .mbtn { grid-column: 2 / -1; }
 @media (max-width: 900px) { .mrow { grid-template-columns: 1fr; } .mrow .mbtn { grid-column: auto; } }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 14px; }
+.grid2 input { width: 100%; }
+.check-list li { margin: 6px 0; }
+.mfa-card { max-width: 440px; margin: 40px auto; }
+.mfa-card input { font-size: 22px; letter-spacing: 4px; width: 160px; text-align: center; }

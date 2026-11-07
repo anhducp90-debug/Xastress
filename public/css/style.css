@@ -403,3 +403,17 @@ a.btn { text-decoration: none; }
   .chat-panel.collapsed .chat-log .cm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
   .chat-panel.collapsed .chat-log .poll { display: none; }
 }
+/* ===== Đồng ý điều khoản, mã khôi phục, liên kết pháp lý ===== */
+.consent { display: grid; gap: 6px; background: #fff7e0; border: 1px dashed var(--wood-l); border-radius: 10px; padding: 8px 10px; }
+.consent .check { font-size: 13.5px; line-height: 1.4; }
+.legal-links { text-align: center; font-size: 12.5px; margin-top: 8px; color: var(--muted); }
+.legal-links a { color: var(--muted); }
+.recovery { display: grid; gap: 10px; }
+.rc-code { font: 700 22px/1.3 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 1px; text-align: center; background: #fff; border: 3px dashed var(--red); border-radius: 12px; padding: 12px; word-break: break-all; user-select: all; }
+#forgotBtn, #backLogin { justify-self: center; margin-top: 4px; }
+/* nút ✕ luôn nằm trên nội dung hộp thoại (bong bóng thoại của Cô Tư từng che mất) */
+.modal-panel > .close { z-index: 5; background: var(--paper); border-radius: 99px; width: 34px; height: 34px; line-height: 1; }
+/* .btn đặt display nên thuộc tính hidden không có tác dụng */
+#actBtn[hidden] { display: none !important; }
+.recovery label.check { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.recovery label.check input { width: auto; margin: 0; }

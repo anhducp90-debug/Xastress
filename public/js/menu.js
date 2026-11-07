@@ -338,7 +338,8 @@ export function createMenu(ctx) {
     aiChat(pack);
   }
 
-  const PRIVACY = html`<p class="fine ai-fine">🤖 Cô Tư AI là trợ lý ảo, không thay thế bác sĩ hay chuyên gia tâm lý. Tin nhắn được gửi tới dịch vụ AI (Anthropic Claude) để trả lời và tự xoá sau khi gói hết hạn 7 ngày; bạn có thể xoá ngay bất cứ lúc nào. Đừng kể tên thật, số điện thoại, địa chỉ.</p>`;
+  const PRIVACY = html`<p class="fine ai-fine">🤖 <b>Cô Tư AI là trợ lý ảo, không phải bác sĩ hay chuyên gia tâm lý</b>, có thể nói sai và không chẩn đoán hay kê thuốc. Đang gặp nguy hiểm? Gọi <a href="tel:115">115</a> hoặc đường dây Ngày Mai <a href="tel:0963061414">096 306 1414</a>.
+    Tin nhắn được gửi tới nhà cung cấp AI ở nước ngoài để trả lời và tự xoá sau khi gói hết hạn 7 ngày; bạn có thể xoá ngay. Đừng kể tên thật, số điện thoại, địa chỉ. <a href="/ai-va-suc-khoe.html" target="_blank">Tìm hiểu thêm</a></p>`;
 
   async function aiChat(pack) {
     const box = $('#activity');

@@ -36,13 +36,14 @@ const RECOMMENDED = {
 const REFUSED = 'Chuyện này cô không nói tiếp được, con thông cảm nha. Nếu con đang gặp nguy hiểm, gọi ngay 115 hoặc đường dây Ngày Mai 096 306 1414 nhé.';
 
 // Thống kê dùng AI trong ngày (cho trang quản trị)
-const usage = { day: '', calls: {}, errors: {} };
+const usage = { day: '', calls: {}, errors: {}, ...(settings.get('ai_usage', null) || {}) }; // giữ số lượt qua lần khởi động lại
 const vnDay = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 function track(provider, ok) {
   const d = vnDay();
   if (usage.day !== d) { usage.day = d; usage.calls = {}; usage.errors = {}; }
   const m = ok ? usage.calls : usage.errors;
   m[provider] = (m[provider] || 0) + 1;
+  settings.set('ai_usage', usage);
 }
 
 function current() {

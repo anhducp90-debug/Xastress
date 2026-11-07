@@ -68,4 +68,4 @@ function secretHint(name) {
   return v ? `••••${v.slice(-4)}` : null;
 }
 
-module.exports = { get, set, getSecret, setSecret, secretHint };
+module.exports = { get, set, getSecret, setSecret, secretHint, encrypt, decrypt };

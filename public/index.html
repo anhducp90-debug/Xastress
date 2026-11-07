@@ -8,6 +8,15 @@
   <meta name="theme-color" content="#7a2318">
   <meta property="og:title" content="Trà Đá Xả Stress – xastress.lopchungminh.net">
   <meta property="og:description" content="Ngồi xuống, gọi ly trà đá, kể chuyện cho nhẹ lòng.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://xastress.lopchungminh.net/">
+  <meta property="og:image" content="https://xastress.lopchungminh.net/og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="vi_VN">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://xastress.lopchungminh.net/">
+  <meta name="theme-color" content="#7a2318">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
   <!-- tải sẵn thư viện 3D trong lúc khách đăng nhập -->
@@ -90,7 +99,11 @@
         </div>
         <label>Tên đăng nhập (bí mật) <input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_.]{3,24}" autocomplete="username" placeholder="chỉ bạn biết"></label>
         <label>Mật khẩu <input name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="ít nhất 8 ký tự"></label>
-        <label class="check"><input type="checkbox" name="rules" required> Tôi đồng ý <a href="#" data-open="rules">nội quy quán</a>: tôn trọng, tử tế, không phán xét.</label>
+        <div class="consent">
+          <label class="check"><input type="checkbox" name="terms" required> Tôi đồng ý <a href="/dieu-khoan.html" target="_blank">Điều khoản sử dụng</a> và <a href="/noi-quy.html" target="_blank">Nội quy quán</a>: tôn trọng, tử tế, không phán xét.</label>
+          <label class="check"><input type="checkbox" name="privacy" required> Tôi đã đọc <a href="/quyen-rieng-tu.html" target="_blank">Chính sách quyền riêng tư</a> và đồng ý để quán xử lý những gì tôi chia sẻ (có thể gồm chuyện sức khoẻ tinh thần), kể cả gửi tới dịch vụ AI ở nước ngoài khi tôi trò chuyện với Cô Tư AI.</label>
+          <label class="check"><input type="checkbox" name="age" required> Tôi từ đủ <b>16 tuổi</b> trở lên.</label>
+        </div>
         <p class="err" id="regErr"></p>
         <button class="btn big warm" type="submit">🍵 Vào quán</button>
       </form>
@@ -99,8 +112,21 @@
         <label>Mật khẩu <input name="password" type="password" required autocomplete="current-password"></label>
         <p class="err" id="loginErr"></p>
         <button class="btn big warm" type="submit">🍵 Vào quán</button>
+        <button type="button" class="linkish" id="forgotBtn">🔑 Quên mật khẩu?</button>
       </form>
-      <p class="fine">Không lưu mật khẩu, nên hãy ghi nhớ kỹ. Quán không thay thế chuyên gia tâm lý – nếu bạn đang gặp nguy hiểm, bấm <a href="#" data-open="support">Cần giúp</a>.</p>
+      <form id="recoverForm" class="form hidden">
+        <p class="tag">Nhập <b>mã khôi phục</b> bạn đã lưu khi tạo tài khoản (dạng ABCD-EFGH-…). Quán không dùng email nên đây là cách duy nhất lấy lại tài khoản.</p>
+        <label>Tên đăng nhập <input name="username" required autocomplete="username"></label>
+        <label>Mã khôi phục <input name="code" required autocomplete="one-time-code" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="24"></label>
+        <label>Mật khẩu mới <input name="newPassword" type="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+        <p class="err" id="recErr"></p>
+        <button class="btn big warm" type="submit">🔓 Đặt lại mật khẩu</button>
+        <button type="button" class="linkish" id="backLogin">← Quay lại đăng nhập</button>
+      </form>
+      <p class="fine">Hãy ghi nhớ mật khẩu và lưu mã khôi phục. Quán và Cô Tư AI không thay thế chuyên gia tâm lý – nếu bạn đang gặp nguy hiểm, bấm <a href="#" data-open="support">Cần giúp</a>.</p>
+      <nav class="legal-links" aria-label="Pháp lý">
+        <a href="/dieu-khoan.html">Điều khoản</a> · <a href="/quyen-rieng-tu.html">Quyền riêng tư</a> · <a href="/noi-quy.html">Nội quy</a> · <a href="/thanh-toan.html">Xu &amp; thanh toán</a> · <a href="/ai-va-suc-khoe.html">Cô Tư AI &amp; sức khoẻ tinh thần</a>
+      </nav>
     </div>
   </section>
 

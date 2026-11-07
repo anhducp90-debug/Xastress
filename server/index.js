@@ -66,6 +66,21 @@ app.get('/api/auth/me', auth.me);
 app.post('/api/auth/profile', auth.requireUser, auth.updateProfile);
 app.post('/api/auth/password', authLimiter, auth.requireUser, auth.changePassword);
 app.post('/api/auth/delete', authLimiter, auth.requireUser, auth.deleteAccount);
+app.post('/api/auth/consent', auth.requireUser, auth.consent);
+app.post('/api/auth/recover', authLimiter, auth.recover);
+app.post('/api/auth/recovery-code', authLimiter, auth.requireUser, auth.regenRecovery);
+app.post('/api/auth/mfa/verify', authLimiter, auth.mfaVerify);
+app.get('/api/admin/mfa', auth.requireAdmin, auth.mfaStatus);
+app.post('/api/admin/mfa/setup', auth.requireAdmin, auth.mfaSetup);
+app.post('/api/admin/mfa/enable', authLimiter, auth.requireAdmin, auth.mfaEnable);
+app.post('/api/admin/mfa/disable', authLimiter, auth.requireAdmin, auth.mfaDisable);
+// Tải về toàn bộ dữ liệu của mình
+app.get('/api/me/export', auth.requireUser, (req, res) => {
+  res.setHeader('Content-Disposition', `attachment; filename="xastress-du-lieu-cua-toi-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('application/json').send(JSON.stringify(require('./privacy').exportUser(req.user.id), null, 2));
+});
+app.use('/api', require('./legal'));
 app.use('/api', posts);
 app.use('/api', require('./aiRoutes'));
 app.use('/api', require('./walletRoutes'));
@@ -86,6 +101,12 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res, file) => { res.setHeader('Cache-Control', /\.(png|jpe?g|svg|webp|ico|woff2?)$/.test(file) ? 'public, max-age=604800' : 'no-cache'); },
 }));
 
+// Trang không tồn tại
+app.use((req, res) => {
+  if (req.method !== 'GET' || !req.accepts('html')) return res.status(404).end();
+  res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+});
+
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Dữ liệu không hợp lệ.' });
@@ -98,6 +119,7 @@ realtime.init(server, { userFromToken: auth.userFromToken, cookieName: auth.COOK
 
 if (require.main === module) {
   require('./telegram').start(); // bot bán xu (chỉ chạy khi có TELEGRAM_BOT_TOKEN)
+  require('./backup').start();   // tự sao lưu CSDL mỗi ngày
   server.listen(config.port, config.host, () => {
     console.log(`☕ Xả Stress đang mở quán tại http://${config.host}:${config.port}`);
   });

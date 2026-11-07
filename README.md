@@ -53,6 +53,14 @@ Kế hoạch và "lọ điều tốt" chỉ lưu trong trình duyệt của ngư
 - 👥 **Người dùng** (chỉ hiện biệt danh, không hiện tên đăng nhập): tìm, cộng/trừ xu, khoá/mở khoá. 🚩 **Báo cáo**, 📝 **Tâm sự** (ẩn/hiện/xoá), 💳 **Thanh toán** (xem bên dưới).
 - 💳 **Thanh toán**: doanh thu hôm nay / 7 ngày / tổng, biểu đồ 14 ngày; danh sách đơn nạp xu (lọc theo trạng thái, tìm mã đơn; **xác nhận đã nhận tiền**, **huỷ**, **hoàn** – hoàn sẽ trừ lại xu); giao dịch ngân hàng chưa khớp đơn (gán tay); giao dịch Telegram Stars; **cài đặt**: ngân hàng + số tài khoản + chủ tài khoản nhận tiền (có QR thử), khoá webhook SePay, thời hạn đơn, cho nạp trước khi thu phí, **sửa gói xu** (xu, giá VNĐ, giá Stars).
 
+**🔐 Bảo mật, quyền riêng tư & pháp lý**
+- Đăng ký phải đánh dấu đồng ý **Điều khoản**, **Chính sách quyền riêng tư** (gồm xử lý dữ liệu nhạy cảm, gửi dữ liệu tới dịch vụ AI ở nước ngoài) và xác nhận **đủ 16 tuổi**. Quán lưu phiên bản điều khoản khách đã đồng ý; khi đổi `TERMS_VERSION` trong `server/auth.js`, khách được hỏi đồng ý lại.
+- 5 trang pháp lý: `/dieu-khoan.html`, `/quyen-rieng-tu.html`, `/noi-quy.html`, `/thanh-toan.html`, `/ai-va-suc-khoe.html`. Thông tin đơn vị vận hành (tên, MST, email…) điền trong trang quản trị → 🔐 Bảo mật & pháp lý. Nội dung do AI soạn theo cách quán hoạt động – **nên nhờ luật sư rà lại**.
+- **Mã khôi phục** (thay cho email): hiện một lần khi đăng ký, dùng ở “Quên mật khẩu?”, tạo mã mới trong 👤 Hồ sơ.
+- **Tải dữ liệu của tôi** (JSON) và **xoá tài khoản** trong 👤 Hồ sơ.
+- Quản trị viên bật **xác thực 2 bước** (Google Authenticator…); phiên chưa nhập mã chỉ có quyền khách thường.
+- Tự ẩn số điện thoại, link, email, @tài khoản trong mọi nội dung khách đăng; trần lượt gọi AI mỗi ngày; tự sao lưu CSDL hằng ngày.
+
 **☕ Vào quán phải gọi 1 ly**
 - Mỗi lượt vào quán (online lại sau khi vắng hơn 30 phút – `VISIT_GAP_MINUTES`), khách được mời gọi 1 ly trước. Thực đơn tự mở ra, khung chat và các nút tương tác bị khoá cho tới khi gọi ly.
 - Chưa gọi ly thì chỉ xem: server chặn chat, đăng tâm sự, bình luận, bày tỏ cảm xúc, tặng nước. Người đã gọi ly có biểu tượng ☕ trước tên.

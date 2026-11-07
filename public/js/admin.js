@@ -32,7 +32,8 @@ function setTimer(fn, ms) { clearInterval(timer); timer = fn ? setInterval(fn, m
 
 // ================= Tổng quan =================
 async function overview() {
-  const [o, ps] = await Promise.all([api('/admin/overview'), api('/admin/pay/summary').catch(() => null)]);
+  const [o, ps, mfa, legal, bk] = await Promise.all([api('/admin/overview'), api('/admin/pay/summary').catch(() => null),
+    api('/admin/mfa').catch(() => null), api('/admin/legal').catch(() => null), api('/admin/backup').catch(() => null)]);
   const e = o.economy;
   const pct = Math.round((e.participants / e.threshold) * 100);
   const ai = o.ai;
@@ -42,6 +43,9 @@ async function overview() {
   $('#repCount').textContent = o.openReports; $('#repCount').classList.toggle('hidden', !o.openReports);
   main.innerHTML = `
     <h1>📊 Tổng quan</h1>
+    ${mfa && !mfa.enabled ? '<div class="note red">🔐 Tài khoản quản trị chưa bật <b>xác thực 2 bước</b>. Ai đoán được mật khẩu là điều khiển được cả quán và thanh toán. <a href="#security" data-goto="security">Bật ngay</a></div>' : ''}
+    ${legal && (!legal.operator || !legal.email) ? '<div class="note">⚖️ Chưa điền <b>thông tin đơn vị vận hành</b> (tên, email liên hệ) – các trang Điều khoản/Quyền riêng tư đang hiện “(đang cập nhật)”. <a href="#security" data-goto="security">Điền ngay</a></div>' : ''}
+    ${bk && (!bk.last || Date.now() - bk.last.at > 36 * 3600e3) ? `<div class="note red">💾 ${bk.last ? `Bản sao lưu gần nhất đã cũ (${when(bk.last.at)})` : 'Chưa có bản sao lưu nào'}. <a href="#security" data-goto="security">Xem sao lưu</a></div>` : ''}
     <div class="grid">
       ${[['🟢 Đang trong quán', o.online], ['👥 Khách', o.users], ['🆕 Khách mới hôm nay', o.newUsersToday], ['📝 Tâm sự hôm nay', `${o.postsToday} / ${o.postsTotal}`],
         ['💬 Bình luận hôm nay', o.commentsToday], ['🧋 Ly gọi hôm nay', o.ordersToday], ['🎁 Ly tặng hôm nay', o.cupsGiftedToday], ['✉️ Tin riêng hôm nay', o.dmsToday],
@@ -64,6 +68,7 @@ async function overview() {
       <div><b>🎙️ Cô Tư hoạt náo:</b> ${o.cotu.enabled ? '<span class="pill ok">Bật</span>' : '<span class="pill off">Tắt</span>'}</div>
     </div>`;
   setBars(main);
+  main.querySelectorAll('[data-goto]').forEach((a) => { a.onclick = (ev) => { ev.preventDefault(); go(a.dataset.goto); }; });
 }
 
 // ================= AI cho Cô Tư =================
@@ -484,8 +489,90 @@ const pkgRow = (p) => `<tr data-pk>
   <td><input type="number" data-f="xu" min="1" value="${esc(p.xu)}"></td><td><input type="number" data-f="vnd" min="1000" step="1000" value="${esc(p.vnd)}"></td>
   <td><input type="number" data-f="stars" min="0" value="${esc(p.stars || 0)}"></td><td><button class="btn danger" data-pkdel>✕</button></td></tr>`;
 
+// ================= Bảo mật & pháp lý =================
+const LEGAL_FIELDS = [['operator', 'Đơn vị vận hành (họ tên cá nhân / hộ kinh doanh / công ty)', 'vd: Hộ kinh doanh Trà Đá Xả Stress'], ['businessId', 'Mã số thuế / số ĐKKD (nếu có)', ''],
+  ['address', 'Địa chỉ liên hệ', ''], ['email', 'Email liên hệ, khiếu nại, yêu cầu về dữ liệu (bắt buộc)', 'hotro@...'], ['phone', 'Điện thoại (tuỳ chọn)', ''],
+  ['telegram', 'Telegram hỗ trợ (tuỳ chọn)', '@ten_ho_tro'], ['dpo', 'Người phụ trách bảo vệ dữ liệu cá nhân', 'Họ tên hoặc chức danh']];
+async function securityTab() {
+  const [mfa, legal, bk] = await Promise.all([api('/admin/mfa'), api('/admin/legal'), api('/admin/backup')]);
+  const kb = (n) => `${fmt(Math.round(n / 1024))} KB`;
+  main.innerHTML = `
+    <h1>🔐 Bảo mật &amp; pháp lý</h1>
+    <h2>Xác thực 2 bước cho tài khoản quản trị</h2>
+    <div class="card" id="mfaBox">
+      ${mfa.enabled ? `<p><span class="pill ok">Đang bật</span> Mỗi lần đăng nhập, trang quản trị sẽ hỏi mã 6 số từ ứng dụng xác thực.</p>
+        <div class="row"><input id="mfaOff" inputmode="numeric" maxlength="6" placeholder="Mã 6 số"><button class="btn danger" id="mfaOffBtn">Tắt xác thực 2 bước</button></div>`
+      : `<p><span class="pill">Chưa bật</span> Dùng Google Authenticator, Microsoft Authenticator, Authy… trên điện thoại.</p>
+        <button class="btn primary" id="mfaSetup">Bật xác thực 2 bước</button><div id="mfaStep"></div>`}
+    </div>
+    <h2>Thông tin đơn vị vận hành (hiện trên các trang pháp lý)</h2>
+    <div class="card">
+      <div class="grid2">${LEGAL_FIELDS.map(([k, l, ph]) => `<label class="f">${l}<input data-legal="${k}" value="${esc(legal[k])}" placeholder="${esc(ph)}"></label>`).join('')}</div>
+      <button class="btn primary" id="saveLegal">💾 Lưu</button>
+      <p class="muted">Trang công khai: <a href="/dieu-khoan.html" target="_blank">Điều khoản</a> · <a href="/quyen-rieng-tu.html" target="_blank">Quyền riêng tư</a> · <a href="/noi-quy.html" target="_blank">Nội quy</a> · <a href="/thanh-toan.html" target="_blank">Xu &amp; thanh toán</a> · <a href="/ai-va-suc-khoe.html" target="_blank">Cô Tư AI &amp; sức khoẻ tinh thần</a>. Phiên bản điều khoản hiện hành: <code>${esc(legal.termsVersion)}</code> – đổi trong <code>server/auth.js</code> (TERMS_VERSION) khi sửa nội dung để khách được hỏi đồng ý lại.</p>
+    </div>
+    <h2>Việc cần tự làm / hỏi luật sư trước khi mở rộng</h2>
+    <div class="card"><ol class="check-list">
+      <li>Xác định quán có thuộc diện <b>mạng xã hội</b> theo Nghị định 147/2024/NĐ-CP không, và nghĩa vụ đi kèm (thông báo/giấy phép theo quy mô, xác thực tài khoản người dùng bằng số điện thoại…). Điều này ảnh hưởng trực tiếp tới tính ẩn danh của quán.</li>
+      <li>Việc bán <b>xu</b> lấy tiền thật có bị coi là trò chơi điện tử có thu phí (cần giấy phép) hay dịch vụ nội dung số khác.</li>
+      <li>Lập và lưu <b>hồ sơ đánh giá tác động xử lý dữ liệu cá nhân</b> và <b>hồ sơ chuyển dữ liệu ra nước ngoài</b> (gửi tới nhà cung cấp AI) theo Nghị định 13/2023 và Luật Bảo vệ dữ liệu cá nhân.</li>
+      <li><b>Đăng ký kinh doanh &amp; thuế</b> cho doanh thu bán xu (hộ kinh doanh/doanh nghiệp), xuất chứng từ khi khách yêu cầu.</li>
+      <li>Đọc lại 5 trang pháp lý, điền thông tin ở trên, chỉnh nội dung cho đúng thực tế vận hành của bạn.</li>
+    </ol><p class="muted">Các trang pháp lý do AI soạn dựa trên cách quán đang hoạt động – <b>không thay thế ý kiến luật sư</b>.</p></div>
+    <h2>Sao lưu dữ liệu</h2>
+    <div class="card">
+      <p>Tự sao lưu mỗi ngày lúc ${bk.hour}h (giờ VN), giữ ${bk.keep} bản trong <code>${esc(bk.dir)}</code>. Hiện có ${bk.files} bản.
+        ${bk.last ? `Gần nhất: <b>${when(bk.last.at)}</b> (${esc(bk.last.file)}, ${kb(bk.last.size)}).` : '<span class="pill">Chưa có bản nào</span>'}
+        ${bk.lastError ? `<span class="pill">Lỗi: ${esc(bk.lastError.message)}</span>` : ''}</p>
+      <button class="btn" id="bkNow">💾 Sao lưu ngay</button>
+      <p class="muted">Bản sao lưu nằm cùng máy chủ – nên chép thư mục này sang nơi khác (máy cá nhân, Google Drive…) định kỳ, phòng khi VPS hỏng.</p>
+    </div>`;
+  $('#saveLegal').onclick = async () => {
+    const body = {};
+    main.querySelectorAll('[data-legal]').forEach((i) => { body[i.dataset.legal] = i.value.trim(); });
+    try { await api('/admin/legal', { body }); toast('Đã lưu ✓'); } catch (err) { toast(err.message, true); }
+  };
+  $('#bkNow').onclick = async () => {
+    $('#bkNow').disabled = true;
+    try { const r = await api('/admin/backup', { body: {} }); toast(`Đã sao lưu: ${r.last.file}`); securityTab(); } catch (err) { toast(err.message, true); $('#bkNow').disabled = false; }
+  };
+  if (mfa.enabled) {
+    $('#mfaOffBtn').onclick = async () => {
+      if (!confirm('Tắt xác thực 2 bước? Tài khoản quản trị sẽ kém an toàn hơn.')) return;
+      try { await api('/admin/mfa/disable', { body: { code: $('#mfaOff').value } }); toast('Đã tắt'); securityTab(); } catch (err) { toast(err.message, true); }
+    };
+  } else {
+    $('#mfaSetup').onclick = async () => {
+      const r = await api('/admin/mfa/setup', { body: {} });
+      $('#mfaStep').innerHTML = `
+        <ol><li>Mở ứng dụng xác thực → thêm tài khoản → quét mã QR (hoặc nhập khoá <code>${esc(r.secret)}</code>).</li>
+        <li>Nhập mã 6 số ứng dụng hiện ra để xác nhận.</li></ol>
+        <div class="row"><img class="qr" src="${r.qr}" alt="Mã QR xác thực 2 bước">
+          <div><input id="mfaCode" inputmode="numeric" maxlength="6" placeholder="Mã 6 số" autocomplete="one-time-code"> <button class="btn primary" id="mfaEnable">Xác nhận &amp; bật</button></div></div>
+        <p class="muted">Lưu khoá ở trên vào nơi an toàn. Mất điện thoại mà không còn khoá: chạy <code>docker exec xastress node deploy/admin-tool.js reset-2fa chạy lệnh trên máy chủ để tắt – xem deploy/DOCKER.mdlt;tên đăng nhậpchạy lệnh trên máy chủ để tắt – xem deploy/DOCKER.mdgt;</code> trên máy chủ để tắt.</p>`;
+      $('#mfaEnable').onclick = async () => {
+        try { await api('/admin/mfa/enable', { body: { code: $('#mfaCode').value } }); toast('Đã bật xác thực 2 bước ✓'); securityTab(); } catch (err) { toast(err.message, true); }
+      };
+    };
+  }
+}
+
+// Phiên quản trị chưa nhập mã xác thực 2 bước
+function mfaPrompt() {
+  $('#nav').classList.add('hidden');
+  main.innerHTML = `<div class="card mfa-card"><h1>🔐 Xác thực 2 bước</h1>
+    <p>Nhập mã 6 số trong ứng dụng xác thực trên điện thoại của bạn.</p>
+    <form id="mfaForm" class="row"><input id="mfaIn" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autofocus>
+    <button class="btn primary">Vào trang quản trị</button></form><p id="mfaErr" class="muted"></p></div>`;
+  $('#mfaForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api('/auth/mfa/verify', { body: { code: $('#mfaIn').value } }); location.reload(); }
+    catch (err) { $('#mfaErr').textContent = `✗ ${err.message}`; $('#mfaIn').select(); }
+  };
+}
+
 // ================= Điều hướng =================
-const TABS = { overview, ai: aiTab, cotu: cotuTab, economy: economyTab, users: () => usersTab(), reports: reportsTab, posts: postsTab, payments: paymentsTab };
+const TABS = { overview, ai: aiTab, cotu: cotuTab, economy: economyTab, users: () => usersTab(), reports: reportsTab, posts: postsTab, payments: paymentsTab, security: securityTab };
 async function go(tab) {
   setTimer(null);
   main.onclick = null;
@@ -494,6 +581,7 @@ async function go(tab) {
     await TABS[tab]();
     if (tab === 'overview') setTimer(() => overview().catch(() => {}), 15000);
   } catch (err) {
+    if (err.status === 401 && /xác thực 2 bước/.test(err.message)) return mfaPrompt();
     main.innerHTML = `<div class="card note red">${esc(err.message)}</div>`;
   }
   history.replaceState(null, '', `#${tab}`);
@@ -503,6 +591,7 @@ $('#nav').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) go
 (async () => {
   try {
     const { user } = await api('/auth/me');
+    if (user && user.adminMfa) return mfaPrompt();
     if (!user || !user.isAdmin) {
       main.innerHTML = '<div class="card note red">Trang này chỉ dành cho quản trị viên. Đăng nhập ở <a href="/">quán</a> bằng tài khoản có trong <code>ADMIN_USERNAMES</code>.</div>';
       $('#nav').classList.add('hidden');
